@@ -2,111 +2,196 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { motion } from "framer-motion";
-import { FileText, Merge, Scissors, Minimize2 } from "lucide-react";
+import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+    FileText,
+    Merge,
+    Scissors,
+    Minimize2,
+    Sheet,
+    Presentation,
+    Image as ImageIcon,
+    FileImage,
+    FileSpreadsheet,
+    ChevronDown,
+    Home,
+    Settings
+} from "lucide-react";
 
-export const metadata = {
-    title: "Universal Converter | Professional File Tools",
-    description: "Comprehensive file tools to manage, convert, and optimize your documents with ease.",
-};
 
-const navItems = [
-    { name: "Home", href: "/", icon: FileText },
-    { name: "Merge PDF", href: "/merge-pdf", icon: Merge },
-    { name: "Split PDF", href: "/split-pdf", icon: Scissors },
-    { name: "Compress PDF", href: "/compress-pdf", icon: Minimize2 },
-];
 
 export default function Navbar() {
     const pathname = usePathname();
+    const [isToolsOpen, setIsToolsOpen] = useState(false);
+
+    const toolCategories = [
+        {
+            title: "PDF Tools",
+            tools: [
+                { name: "Merge PDF", href: "/merge-pdf", icon: Merge },
+                { name: "Split PDF", href: "/split-pdf", icon: Scissors },
+                { name: "Organize PDF", href: "/organize-pdf", icon: Settings },
+                { name: "Compress PDF", href: "/compress-pdf", icon: Minimize2 },
+            ]
+        },
+        {
+            title: "Convert from PDF",
+            tools: [
+                { name: "PDF to Word", href: "/pdf-to-word", icon: FileText },
+                { name: "PDF to Excel", href: "/pdf-to-excel", icon: Sheet },
+                { name: "PDF to PowerPoint", href: "/pdf-to-ppt", icon: Presentation },
+                { name: "PDF to JPG", href: "/pdf-to-jpg", icon: ImageIcon },
+            ]
+        },
+        {
+            title: "Convert to PDF",
+            tools: [
+                { name: "Image to PDF", href: "/image-to-pdf", icon: FileImage },
+                { name: "Office to PDF", href: "/office-to-pdf", icon: FileSpreadsheet },
+                { name: "HTML to PDF", href: "/html-to-pdf", icon: FileSpreadsheet },
+            ]
+        }
+    ];
+
+    const allTools = toolCategories.flatMap(cat => cat.tools);
 
     return (
-        <nav className="fixed top-0 left-0 right-0 z-50 bg-zinc-900/80 backdrop-blur-xl border-b border-white/10">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div className="flex items-center justify-between h-16">
+        <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-xl border-b border-zinc-200">
+            <div className="max-w-7xl mx-auto px-6 py-4">
+                <div className="flex items-center justify-between">
                     {/* Logo */}
-                    <Link href="/" className="flex items-center space-x-2 group">
-                        <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-blue-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
-                            <FileText className="text-white" size={24} />
+                    <Link href="/" className="flex items-center gap-2 group">
+                        <div className="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg shadow-indigo-200">
+                            <FileText className="text-white" size={20} />
                         </div>
-                        <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-zinc-400">
-                            Universal Converter
+                        <span className="text-xl font-bold text-zinc-900 tracking-tight">
+                            UniversalConvert
                         </span>
                     </Link>
 
                     {/* Desktop Navigation */}
-                    <div className="hidden md:flex items-center space-x-1">
-                        {navItems.map((item) => {
-                            const isActive = pathname === item.href;
-                            const Icon = item.icon;
+                    <div className="hidden md:flex items-center gap-1">
+                        <Link
+                            href="/"
+                            className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 ${pathname === "/"
+                                ? "bg-indigo-50 text-indigo-600"
+                                : "text-zinc-600 hover:text-indigo-600 hover:bg-zinc-100"
+                                }`}
+                        >
+                            <Home size={18} />
+                            Home
+                        </Link>
 
-                            return (
+                        {/* Tools Dropdown */}
+                        <div
+                            className="relative"
+                            onMouseEnter={() => setIsToolsOpen(true)}
+                            onMouseLeave={() => setIsToolsOpen(false)}
+                        >
+                            <button
+                                onClick={() => setIsToolsOpen(!isToolsOpen)}
+                                className="px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 text-zinc-600 hover:text-indigo-600 hover:bg-zinc-100 cursor-pointer"
+                            >
+                                <FileText size={18} />
+                                All Tools
+                                <ChevronDown
+                                    size={16}
+                                    className={`transition-transform duration-300 ${isToolsOpen ? "rotate-180" : ""}`}
+                                />
+                            </button>
+
+                            <AnimatePresence>
+                                {isToolsOpen && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                        className="absolute top-full right-0 mt-2 w-[600px] lg:w-[800px] bg-white border border-zinc-200 rounded-xl shadow-xl overflow-hidden shadow-zinc-200/50 p-6 z-50"
+                                    >
+                                        <div className="grid grid-cols-3 gap-8">
+                                            {toolCategories.map((category) => (
+                                                <div key={category.title} className="flex flex-col gap-2">
+                                                    <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2 border-b border-zinc-100 pb-2">
+                                                        {category.title}
+                                                    </div>
+                                                    {category.tools.map((tool) => {
+                                                        const Icon = tool.icon;
+                                                        return (
+                                                            <Link
+                                                                key={tool.href}
+                                                                href={tool.href}
+                                                                onClick={() => setIsToolsOpen(false)}
+                                                                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${pathname === tool.href
+                                                                    ? "bg-indigo-50 text-indigo-600"
+                                                                    : "text-zinc-700 hover:bg-zinc-50 hover:text-indigo-600"
+                                                                    }`}
+                                                            >
+                                                                <Icon size={18} className={pathname === tool.href ? "text-indigo-600" : "text-zinc-400"} />
+                                                                <span className="text-sm font-medium">{tool.name}</span>
+                                                            </Link>
+                                                        );
+                                                    })}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
+                    </div>
+
+                    {/* Mobile Menu Button */}
+                    <button
+                        onClick={() => setIsToolsOpen(!isToolsOpen)}
+                        className="md:hidden p-2 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 transition-colors cursor-pointer"
+                    >
+                        <FileText size={20} />
+                    </button>
+                </div>
+
+                {/* Mobile Menu */}
+                <AnimatePresence>
+                    {isToolsOpen && (
+                        <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="md:hidden mt-4 pt-4 border-t border-zinc-100"
+                        >
+                            <div className="space-y-1">
                                 <Link
-                                    key={item.name}
-                                    href={item.href}
-                                    className="relative px-4 py-2 rounded-lg transition-colors duration-200 group"
+                                    href="/"
+                                    onClick={() => setIsToolsOpen(false)}
+                                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${pathname === "/"
+                                        ? "bg-indigo-50 text-indigo-600"
+                                        : "text-zinc-700 hover:bg-zinc-50"
+                                        }`}
                                 >
-                                    <div className="flex items-center space-x-2">
-                                        <Icon
-                                            size={18}
-                                            className={`transition-colors ${isActive
-                                                ? "text-purple-400"
-                                                : "text-zinc-400 group-hover:text-white"
-                                                }`}
-                                        />
-                                        <span
-                                            className={`font-medium transition-colors ${isActive
-                                                ? "text-white"
-                                                : "text-zinc-400 group-hover:text-white"
+                                    <Home size={18} />
+                                    <span className="text-sm font-medium">Home</span>
+                                </Link>
+                                {allTools.map((tool) => {
+                                    const Icon = tool.icon;
+                                    return (
+                                        <Link
+                                            key={tool.href}
+                                            href={tool.href}
+                                            onClick={() => setIsToolsOpen(false)}
+                                            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${pathname === tool.href
+                                                ? "bg-indigo-50 text-indigo-600"
+                                                : "text-zinc-700 hover:bg-zinc-50"
                                                 }`}
                                         >
-                                            {item.name}
-                                        </span>
-                                    </div>
-
-                                    {isActive && (
-                                        <motion.div
-                                            layoutId="navbar-indicator"
-                                            className="absolute inset-0 bg-white/5 rounded-lg border border-white/10"
-                                            transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                                        />
-                                    )}
-                                </Link>
-                            );
-                        })}
-                    </div>
-
-                    {/* Mobile Navigation */}
-                    <div className="md:hidden flex items-center space-x-2">
-                        {navItems.map((item) => {
-                            const isActive = pathname === item.href;
-                            const Icon = item.icon;
-
-                            return (
-                                <Link
-                                    key={item.name}
-                                    href={item.href}
-                                    className="relative p-2 rounded-lg transition-colors duration-200"
-                                >
-                                    <Icon
-                                        size={20}
-                                        className={`transition-colors ${isActive
-                                            ? "text-purple-400"
-                                            : "text-zinc-400 hover:text-white"
-                                            }`}
-                                    />
-                                    {isActive && (
-                                        <motion.div
-                                            layoutId="navbar-indicator-mobile"
-                                            className="absolute inset-0 bg-white/5 rounded-lg border border-white/10"
-                                            transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                                        />
-                                    )}
-                                </Link>
-                            );
-                        })}
-                    </div>
-                </div>
+                                            <Icon size={18} />
+                                            <span className="text-sm font-medium">{tool.name}</span>
+                                        </Link>
+                                    );
+                                })}
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </div>
         </nav>
     );

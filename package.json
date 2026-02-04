@@ -1,5 +1,5 @@
 {
-  "name": "omniconvert",
+  "name": "universalconvert",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -10,17 +10,23 @@
   },
   "dependencies": {
     "framer-motion": "^12.31.0",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.563.0",
+    "mammoth": "^1.11.0",
     "next": "16.1.6",
     "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^5.4.624",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "word-extractor": "^1.0.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/jszip": "^3.4.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/word-extractor": "^1.0.6",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
