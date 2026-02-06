@@ -1,7 +1,8 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import { useState, useEffect } from "react";
-import { Globe, Layout, Maximize, FileText, Check, AlertCircle, RotateCw } from "lucide-react";
+import { Globe, Layout, Maximize, FileText, Check, AlertCircle } from "lucide-react";
 import ConversionLayout from "@/components/ConversionLayout";
 import ProcessingButton from "@/components/ProcessingButton";
 import DownloadResult from "@/components/DownloadResult";
@@ -39,7 +40,7 @@ export default function HTMLToPDF() {
                         // This visualizes "This is where the screenshot goes"
                         setPreviewUrl(`https://placehold.co/800x1200/fafafa/333333/png?text=Preview+of\n${hostname}&font=montserrat`);
                         setIsLoadingPreview(false);
-                    } catch (e) {
+                    } catch {
                         setLoadError(true);
                         setIsLoadingPreview(false);
                     }

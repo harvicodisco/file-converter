@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FileText, ArrowRight, Upload, Plus } from "lucide-react";
-import Link from "next/link";
+import { FileText, Upload, Plus } from "lucide-react";
 import ConversionLayout from "@/components/ConversionLayout";
 import ProcessingButton from "@/components/ProcessingButton";
 import DownloadResult from "@/components/DownloadResult";
@@ -76,7 +75,7 @@ export default function CompressPDF() {
                     {compressionOptions.map((opt) => (
                         <div
                             key={opt.level}
-                            onClick={() => setCompressionLevel(opt.level as any)}
+                            onClick={() => setCompressionLevel(opt.level as "low" | "medium" | "high")}
                             className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${compressionLevel === opt.level
                                 ? 'border-indigo-600 bg-indigo-50'
                                 : 'border-zinc-200 bg-white hover:border-indigo-300'

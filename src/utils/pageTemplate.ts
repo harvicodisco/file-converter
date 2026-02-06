@@ -1,15 +1,16 @@
+import { LucideIcon } from "lucide-react";
+
 // Template generator for conversion pages
 export function createConversionPage(config: {
-    title: string;
-    description: string;
-    icon: any;
-    gradient: string;
-    accept: string;
-    supportedFormats: string;
-    apiEndpoint: string;
-    multiple?: boolean;
+  title: string;
+  description: string;
+  icon: LucideIcon;
+  accept: string;
+  supportedFormats: string;
+  apiEndpoint: string;
+  multiple?: boolean;
 }) {
-    return `"use client";
+  return `"use client";
 
 import { useState } from "react";
 import { ${config.icon.name} } from "lucide-react";
@@ -78,7 +79,6 @@ export default function ConversionPage() {
                 icon={${config.icon.name}}
                 text="Convert Now"
                 processingText="Converting..."
-                gradient="${config.gradient}"
               />
             )}
           </>

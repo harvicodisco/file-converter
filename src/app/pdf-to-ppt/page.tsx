@@ -67,7 +67,6 @@ export default function PDFToPPT() {
                                 icon={Presentation}
                                 text="Convert to PowerPoint"
                                 processingText="Converting..."
-                                gradient="from-orange-600 to-orange-400"
                             />
                         )}
                     </>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import {
     Settings,
     Trash2,
@@ -8,18 +8,17 @@ import {
     GripVertical,
     Plus,
     FileText,
-    Maximize2,
     Check
 } from "lucide-react";
 import ConversionLayout from "@/components/ConversionLayout";
 import ProcessingButton from "@/components/ProcessingButton";
 import DownloadResult from "@/components/DownloadResult";
-import { motion, AnimatePresence, Reorder } from "framer-motion";
-import * as pdfjsLib from 'pdfjs-dist';
+import { AnimatePresence, Reorder } from "framer-motion";
+// import * as pdfjsLib from 'pdfjs-dist';
 import { PDFDocument, degrees } from 'pdf-lib';
 
-// Set up PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+// Separate interface for the pdfjsLib type if needed, or use any for now
+// pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 interface PageData {
     id: string;
@@ -48,6 +47,9 @@ export default function OrganizePDF() {
         setIsLoadingPages(true);
         setPages([]);
         try {
+            const pdfjsLib = await import('pdfjs-dist');
+            pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+
             const arrayBuffer = await pdfFile.arrayBuffer();
             const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
             const pdf = await loadingTask.promise;
@@ -65,9 +67,11 @@ export default function OrganizePDF() {
                     canvas.width = viewport.width;
 
                     await page.render({
-                        canvasContext: context,
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        canvasContext: context as any,
                         viewport: viewport,
-                        canvas: canvas
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        canvas: canvas as any
                     }).promise;
 
                     loadedPages.push({

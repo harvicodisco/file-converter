@@ -48,8 +48,11 @@ export default function PDFToJPG() {
                 canvas.width = viewport.width;
 
                 await page.render({
-                    canvasContext: context,
-                    viewport: viewport
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    canvasContext: context as any,
+                    viewport: viewport,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    canvas: canvas as any
                 }).promise;
 
                 const blob = await new Promise<Blob | null>((resolve) => {

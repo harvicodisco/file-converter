@@ -1,7 +1,8 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import { useState } from "react";
-import { FileImage, Plus, Trash2, GripVertical, Check, Settings } from "lucide-react";
+import { FileImage, Plus, Trash2, GripVertical, Check } from "lucide-react";
 import ConversionLayout from "@/components/ConversionLayout";
 import ProcessingButton from "@/components/ProcessingButton";
 import DownloadResult from "@/components/DownloadResult";
@@ -9,7 +10,6 @@ import { motion, AnimatePresence, Reorder } from "framer-motion";
 import { PDFDocument, PageSizes } from 'pdf-lib';
 
 export default function ImageToPDF() {
-    const [files, setFiles] = useState<File[]>([]);
     const [isConverting, setIsConverting] = useState(false);
     const [result, setResult] = useState<{ fileName: string; downloadUrl: string } | null>(null);
 
@@ -22,7 +22,6 @@ export default function ImageToPDF() {
     const handleFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
             const newFiles = Array.from(e.target.files);
-            setFiles(prev => [...prev, ...newFiles]);
 
             const newPreviews = newFiles.map(file => ({
                 id: `${file.name}-${Date.now()}-${Math.random()}`,
@@ -133,7 +132,6 @@ export default function ImageToPDF() {
 
     const handleReset = () => {
         filesPreview.forEach(p => URL.revokeObjectURL(p.url));
-        setFiles([]);
         setFilesPreview([]);
         setResult(null);
     };

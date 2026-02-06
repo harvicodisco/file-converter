@@ -67,7 +67,6 @@ export default function PDFToExcel() {
                                 icon={Sheet}
                                 text="Convert to Excel"
                                 processingText="Converting..."
-                                gradient="from-green-600 to-green-400"
                             />
                         )}
                     </>

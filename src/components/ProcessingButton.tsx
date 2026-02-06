@@ -9,7 +9,6 @@ interface ProcessingButtonProps {
     icon: LucideIcon;
     text: string;
     processingText: string;
-    gradient?: string;
     className?: string;
     bgColor?: string;
 }
@@ -21,7 +20,6 @@ export default function ProcessingButton({
     icon: Icon,
     text,
     processingText,
-    gradient = "from-indigo-600 to-indigo-500",
     className = "",
     bgColor = "bg-indigo-600",
 }: ProcessingButtonProps) {

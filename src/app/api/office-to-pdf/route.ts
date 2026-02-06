@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
         const pdfDoc = await PDFDocument.create();
         const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const wrapText = (text: string, maxWidth: number, font: any, fontSize: number) => {
             const words = text.split(' ');
             const lines = [];
