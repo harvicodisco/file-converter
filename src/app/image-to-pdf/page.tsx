@@ -6,7 +6,26 @@ import { FileImage, Plus, Trash2, GripVertical, Check } from "lucide-react";
 import ConversionLayout from "@/components/ConversionLayout";
 import ProcessingButton from "@/components/ProcessingButton";
 import DownloadResult from "@/components/DownloadResult";
-import { motion, AnimatePresence, Reorder } from "framer-motion";
+import PreviewContent from "@/components/PreviewContent";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+    DndContext,
+    closestCenter,
+    KeyboardSensor,
+    PointerSensor,
+    useSensor,
+    useSensors,
+    DragEndEvent,
+} from '@dnd-kit/core';
+import {
+    arrayMove,
+    SortableContext,
+    sortableKeyboardCoordinates,
+    rectSortingStrategy,
+    useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { restrictToFirstScrollableAncestor } from '@dnd-kit/modifiers';
 import { PDFDocument, PageSizes } from 'pdf-lib';
 
 export default function ImageToPDF() {
@@ -136,6 +155,30 @@ export default function ImageToPDF() {
         setResult(null);
     };
 
+    const sensors = useSensors(
+        useSensor(PointerSensor, {
+            activationConstraint: {
+                distance: 8,
+            },
+        }),
+        useSensor(KeyboardSensor, {
+            coordinateGetter: sortableKeyboardCoordinates,
+        })
+    );
+
+    const handleDragEnd = (event: DragEndEvent) => {
+        const { active, over } = event;
+
+        if (over && active.id !== over.id) {
+            setFilesPreview((items) => {
+                const oldIndex = items.findIndex((item) => item.id === active.id);
+                const newIndex = items.findIndex((item) => item.id === over.id);
+
+                return arrayMove(items, oldIndex, newIndex);
+            });
+        }
+    };
+
     const SettingsPanel = (
         <div className="flex flex-col h-full">
             <div className="bg-indigo-50/50 rounded-2xl p-4 border border-indigo-100 mb-6">
@@ -159,7 +202,7 @@ export default function ImageToPDF() {
                             <button
                                 key={size}
                                 onClick={() => setPageSize(size)}
-                                className={`flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all cursor-pointer ${pageSize === size ? "border-indigo-600 bg-indigo-50 text-indigo-600 shadow-sm" : "border-zinc-100 bg-white text-zinc-500 hover:border-indigo-200"
+                                className={`flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all cursor-pointer ${pageSize === size ? "border-indigo-600 bg-white text-indigo-600 shadow-sm" : "border-zinc-100 bg-white text-zinc-500 hover:border-indigo-200"
                                     }`}
                             >
                                 <span className="text-sm font-bold capitalize">{size}</span>
@@ -177,7 +220,7 @@ export default function ImageToPDF() {
                             <button
                                 key={mode}
                                 onClick={() => setOrientation(mode)}
-                                className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all cursor-pointer ${orientation === mode ? "border-indigo-600 bg-indigo-50 text-indigo-600 shadow-sm" : "border-zinc-100 bg-white text-zinc-500 hover:border-indigo-200"
+                                className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all cursor-pointer ${orientation === mode ? "border-indigo-600 bg-white text-indigo-600 shadow-sm" : "border-zinc-100 bg-white text-zinc-500 hover:border-indigo-200"
                                     }`}
                             >
                                 <div className={`${mode === 'portrait' ? 'w-5 h-7' : 'w-7 h-5'} border-2 border-current rounded-sm mb-2 opacity-60`} />
@@ -223,7 +266,7 @@ export default function ImageToPDF() {
     return (
         <ConversionLayout
             title="Image to PDF"
-            description="Convert and organize images into a single PDF"
+            description="Convert and organize images into a high-quality PDF document"
             settingsPanel={!result ? SettingsPanel : (
                 <div className="h-full flex flex-col justify-center">
                     <DownloadResult
@@ -239,76 +282,53 @@ export default function ImageToPDF() {
                 </div>
             )}
         >
-            {filesPreview.length > 0 ? (
-                <div className="w-full h-full p-6 sm:p-10">
-                    <Reorder.Group
-                        axis="y"
-                        values={filesPreview}
-                        onReorder={setFilesPreview}
-                        className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8"
+            {result ? (
+                <div className="w-full h-full max-w-4xl">
+                    <PreviewContent url={result.downloadUrl} fileName={result.fileName} />
+                </div>
+            ) : filesPreview.length > 0 ? (
+                <div className="w-full h-full p-6 sm:p-10 flex flex-col">
+                    <div className="mb-8 self-start max-w-4xl w-full mx-auto">
+                        <h2 className="text-sm font-black text-zinc-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                            <div className="w-8 h-px bg-zinc-200" />
+                            Source Images ({filesPreview.length})
+                        </h2>
+                        <p className="text-xs text-zinc-400 font-bold ml-10 -mt-3">Drag to reorder your document flow</p>
+                    </div>
+
+                    <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={handleDragEnd}
+                        modifiers={[restrictToFirstScrollableAncestor]}
                     >
-                        <AnimatePresence>
-                            {filesPreview.map((item, index) => (
-                                <Reorder.Item
-                                    key={item.id}
-                                    value={item}
-                                    className="relative group cursor-grab active:cursor-grabbing"
-                                    initial={{ opacity: 0, scale: 0.9 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    exit={{ opacity: 0, scale: 0.8 }}
-                                    whileDrag={{ zIndex: 50, scale: 1.05 }}
-                                >
-                                    <div className="relative aspect-[3/4] bg-white rounded-2xl border-2 border-zinc-100 shadow-sm group-hover:border-indigo-300 group-hover:shadow-xl transition-all overflow-hidden flex flex-col">
-                                        {/* Image Container */}
-                                        <div className="flex-1 relative overflow-hidden bg-zinc-50 flex items-center justify-center p-2">
-                                            <img
-                                                src={item.url}
-                                                alt="Preview"
-                                                className="max-w-full max-h-full object-contain shadow-sm rounded-sm"
-                                            />
+                        <SortableContext
+                            items={filesPreview.map(p => p.id)}
+                            strategy={rectSortingStrategy}
+                        >
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
+                                {filesPreview.map((item, index) => (
+                                    <SortableImageItem
+                                        key={item.id}
+                                        item={item}
+                                        index={index}
+                                        removeFile={removeFile}
+                                    />
+                                ))}
 
-                                            {/* Index Badge */}
-                                            <div className="absolute top-2 left-2 px-2.5 py-1 bg-white/90 backdrop-blur-sm rounded-lg text-[10px] font-black text-indigo-600 shadow-sm border border-zinc-100">
-                                                IMAGE {index + 1}
-                                            </div>
-
-                                            {/* Overlay for drag hint */}
-                                            <div className="absolute inset-0 bg-indigo-600/0 group-hover:bg-indigo-600/5 transition-colors duration-300" />
+                                {/* Add More Button in Grid */}
+                                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} key="add-more">
+                                    <label className="flex flex-col items-center justify-center w-full aspect-[3/4] rounded-2xl border-2 border-dashed border-zinc-200 hover:border-indigo-400 hover:bg-indigo-50/20 cursor-pointer transition-all group">
+                                        <div className="w-14 h-14 bg-zinc-100 rounded-[1.5rem] flex items-center justify-center mb-4 group-hover:bg-indigo-100 group-hover:scale-110 transition-all shadow-inner">
+                                            <Plus className="text-zinc-400 group-hover:text-indigo-600" size={24} />
                                         </div>
-
-                                        {/* Actions Footer */}
-                                        <div className="h-14 bg-white border-t border-zinc-100 flex items-center justify-between px-3">
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    removeFile(item.id);
-                                                }}
-                                                className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all cursor-pointer"
-                                                title="Remove image"
-                                            >
-                                                <Trash2 size={18} />
-                                            </button>
-                                            <div className="flex items-center gap-2 text-zinc-300">
-                                                <span className="text-[10px] font-black uppercase tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">Move</span>
-                                                <GripVertical size={18} />
-                                            </div>
-                                        </div>
-                                    </div>
-                                </Reorder.Item>
-                            ))}
-                        </AnimatePresence>
-
-                        {/* Add More Button in Grid */}
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                            <label className="flex flex-col items-center justify-center w-full aspect-[3/4] rounded-2xl border-2 border-dashed border-zinc-200 hover:border-indigo-400 hover:bg-indigo-50/20 cursor-pointer transition-all group">
-                                <div className="w-14 h-14 bg-zinc-100 rounded-[1.5rem] flex items-center justify-center mb-4 group-hover:bg-indigo-100 group-hover:scale-110 transition-all shadow-inner">
-                                    <Plus className="text-zinc-400 group-hover:text-indigo-600" size={24} />
-                                </div>
-                                <span className="text-sm font-black text-zinc-400 group-hover:text-indigo-600">Add More</span>
-                                <input type="file" multiple accept="image/*" onChange={handleFilesChange} className="hidden" />
-                            </label>
-                        </motion.div>
-                    </Reorder.Group>
+                                        <span className="text-sm font-black text-zinc-400 group-hover:text-indigo-600">Add More</span>
+                                        <input type="file" multiple accept="image/*" onChange={handleFilesChange} className="hidden" />
+                                    </label>
+                                </motion.div>
+                            </div>
+                        </SortableContext>
+                    </DndContext>
                 </div>
             ) : (
                 <div className="text-center max-w-sm px-6">
@@ -327,5 +347,81 @@ export default function ImageToPDF() {
                 </div>
             )}
         </ConversionLayout>
+    );
+}
+
+function SortableImageItem({ item, index, removeFile }: {
+    item: { id: string; url: string; file: File };
+    index: number;
+    removeFile: (id: string) => void;
+}) {
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        transform,
+        transition,
+        isDragging,
+    } = useSortable({ id: item.id });
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        zIndex: isDragging ? 50 : undefined,
+        opacity: isDragging ? 0.3 : 1,
+    };
+
+    return (
+        <div
+            ref={setNodeRef}
+            style={style}
+            className="relative group touch-none"
+        >
+            <motion.div
+                layout
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="relative aspect-[3/4] bg-white rounded-2xl border-2 border-zinc-100 shadow-sm group-hover:border-indigo-300 group-hover:shadow-xl transition-all overflow-hidden flex flex-col"
+            >
+                {/* Image Container */}
+                <div
+                    {...attributes}
+                    {...listeners}
+                    className="flex-1 relative overflow-hidden bg-zinc-50 flex items-center justify-center p-2 cursor-grab active:cursor-grabbing"
+                >
+                    <img
+                        src={item.url}
+                        alt="Preview"
+                        className="max-w-full max-h-full object-contain shadow-sm rounded-sm pointer-events-none"
+                    />
+
+                    {/* Index Badge */}
+                    <div className="absolute top-2 left-2 px-2.5 py-1 bg-white/90 backdrop-blur-sm rounded-lg text-[10px] font-black text-indigo-600 shadow-sm border border-zinc-100">
+                        IMAGE {index + 1}
+                    </div>
+
+                    {/* Overlay for drag hint */}
+                    <div className="absolute inset-0 bg-indigo-600/0 group-hover:bg-indigo-600/5 transition-colors duration-300" />
+                </div>
+
+                {/* Actions Footer */}
+                <div className="h-14 bg-white border-t border-zinc-100 flex items-center justify-between px-3">
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            removeFile(item.id);
+                        }}
+                        className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all cursor-pointer z-10"
+                        title="Remove image"
+                    >
+                        <Trash2 size={18} />
+                    </button>
+                    <div className="flex items-center gap-2 text-zinc-300 pointer-events-none">
+                        <span className="text-[10px] font-black uppercase tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">Move</span>
+                        <GripVertical size={18} />
+                    </div>
+                </div>
+            </motion.div>
+        </div>
     );
 }
