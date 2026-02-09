@@ -7,11 +7,7 @@ import ProcessingButton from "@/components/ProcessingButton";
 import DownloadResult from "@/components/DownloadResult";
 import PreviewContent from "@/components/PreviewContent";
 import { motion } from "framer-motion";
-import * as pdfjsLib from 'pdfjs-dist';
 import { PDFDocument } from 'pdf-lib';
-
-// Set worker path for pdfjs
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 export default function CompressPDF() {
     const [file, setFile] = useState<File | null>(null);
@@ -42,6 +38,11 @@ export default function CompressPDF() {
 
         try {
             if (compressionLevel === "high") {
+                // Dynamic import to avoid SSR errors
+                const pdfjsLib = await import('pdfjs-dist');
+                // Set worker path
+                pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+
                 // Extreme Compression: Rasterize pages to compressed JPEGs
                 const arrayBuffer = await file.arrayBuffer();
                 const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
