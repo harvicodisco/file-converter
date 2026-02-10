@@ -7,11 +7,14 @@ import ProcessingButton from "@/components/ProcessingButton";
 import DownloadResult from "@/components/DownloadResult";
 import PreviewContent from "@/components/PreviewContent";
 
+type PDFAVersion = "1b" | "1a" | "2b" | "2u" | "2a" | "3b" | "3u" | "3a";
+
 export default function PDFToPDFA() {
     const [files, setFiles] = useState<File[]>([]);
     const [isConverting, setIsConverting] = useState(false);
     const [result, setResult] = useState<{ fileName: string; downloadUrl: string } | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [pdfaVersion, setPdfaVersion] = useState<PDFAVersion>("2b");
 
     const handleFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
@@ -28,6 +31,7 @@ export default function PDFToPDFA() {
         setIsConverting(true);
         const formData = new FormData();
         formData.append("file", files[0]);
+        formData.append("pdfaVersion", pdfaVersion);
 
         try {
             const response = await fetch("/api/pdf-to-pdfa", {
@@ -36,20 +40,30 @@ export default function PDFToPDFA() {
             });
 
             if (response.ok) {
-                const data = await response.json();
-                setResult(data);
+                const blob = await response.blob();
+                const downloadUrl = URL.createObjectURL(blob);
+                const fileName = files[0].name.replace(".pdf", "_PDFA.pdf");
+
+                setResult({
+                    fileName: fileName,
+                    downloadUrl: downloadUrl,
+                });
             } else {
-                alert("Conversion failed");
+                const error = await response.json();
+                alert(error.error || "Conversion failed");
             }
         } catch (error) {
             console.error(error);
-            alert("An error occurred");
+            alert("An error occurred during conversion");
         } finally {
             setIsConverting(false);
         }
     };
 
     const handleReset = () => {
+        if (result?.downloadUrl) {
+            URL.revokeObjectURL(result.downloadUrl);
+        }
         setFiles([]);
         setResult(null);
         if (previewUrl) {
@@ -68,6 +82,107 @@ export default function PDFToPDFA() {
                 <p className="text-xs font-bold text-zinc-500 leading-relaxed">
                     Convert your PDF to the ISO-standardized PDF/A format for long-term document preservation and archiving.
                 </p>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-zinc-100 shadow-sm mb-6">
+                <h3 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3">PDF/A Conformance Level</h3>
+                <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
+                    {[
+                        // PDF/A-1 Series
+                        { 
+                            value: "1b" as PDFAVersion, 
+                            label: "PDF/A-1b", 
+                            desc: "Basic - Visual preservation only",
+                            group: "PDF/A-1",
+                            recommended: false
+                        },
+                        { 
+                            value: "1a" as PDFAVersion, 
+                            label: "PDF/A-1a", 
+                            desc: "Accessible - Full text structure tags",
+                            group: "PDF/A-1",
+                            recommended: false
+                        },
+                        // PDF/A-2 Series
+                        { 
+                            value: "2b" as PDFAVersion, 
+                            label: "PDF/A-2b", 
+                            desc: "Basic - Allows JPEG2000, transparency",
+                            group: "PDF/A-2",
+                            recommended: true
+                        },
+                        { 
+                            value: "2u" as PDFAVersion, 
+                            label: "PDF/A-2u", 
+                            desc: "Unicode - Better text extraction",
+                            group: "PDF/A-2",
+                            recommended: false
+                        },
+                        { 
+                            value: "2a" as PDFAVersion, 
+                            label: "PDF/A-2a", 
+                            desc: "Accessible - Full accessibility tags",
+                            group: "PDF/A-2",
+                            recommended: false
+                        },
+                        // PDF/A-3 Series
+                        { 
+                            value: "3b" as PDFAVersion, 
+                            label: "PDF/A-3b", 
+                            desc: "Basic - Allows embedded files (XML, etc.)",
+                            group: "PDF/A-3",
+                            recommended: false
+                        },
+                        { 
+                            value: "3u" as PDFAVersion, 
+                            label: "PDF/A-3u", 
+                            desc: "Unicode - Better text extraction + embedded files",
+                            group: "PDF/A-3",
+                            recommended: false
+                        },
+                        { 
+                            value: "3a" as PDFAVersion, 
+                            label: "PDF/A-3a", 
+                            desc: "Accessible - Full accessibility + embedded files",
+                            group: "PDF/A-3",
+                            recommended: false
+                        },
+                    ].map((option, index, array) => {
+                        const showGroupHeader = index === 0 || array[index - 1].group !== option.group;
+                        return (
+                            <div key={option.value}>
+                                {showGroupHeader && (
+                                    <div className="text-[9px] font-black text-zinc-300 uppercase tracking-wider mb-2 mt-3 first:mt-0">
+                                        {option.group}
+                                    </div>
+                                )}
+                                <div
+                                    onClick={() => setPdfaVersion(option.value)}
+                                    className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                                        pdfaVersion === option.value
+                                            ? 'border-slate-600 bg-slate-50 shadow-sm'
+                                            : 'border-zinc-100 bg-white hover:border-slate-200'
+                                    }`}
+                                >
+                                    <div className="flex items-center justify-between mb-1">
+                                        <div className="flex items-center gap-2">
+                                            <span className={`text-sm font-bold ${pdfaVersion === option.value ? 'text-slate-700' : 'text-zinc-700'}`}>
+                                                {option.label}
+                                            </span>
+                                            {option.recommended && (
+                                                <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                                    RECOMMENDED
+                                                </span>
+                                            )}
+                                        </div>
+                                        {pdfaVersion === option.value && <div className="w-2 h-2 rounded-full bg-slate-600 shadow-sm" />}
+                                    </div>
+                                    <p className="text-[10px] text-zinc-400 font-medium">{option.desc}</p>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
             </div>
 
             <div className="bg-white p-5 rounded-2xl border border-zinc-100 shadow-sm mb-8">
@@ -114,7 +229,7 @@ export default function PDFToPDFA() {
                         downloadUrl={result.downloadUrl}
                         onReset={handleReset}
                         stats={[
-                            { label: "Standard", value: "PDF/A-2b" },
+                            { label: "Standard", value: `PDF/A-${pdfaVersion}` },
                             { label: "Original", value: files[0]?.name || "" }
                         ]}
                     />
