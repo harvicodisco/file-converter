@@ -57,6 +57,7 @@ export default function RedactPDF() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const searchInputRef = useRef<HTMLInputElement>(null);
     const canvasRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+    const imageRefs = useRef<{ [key: string]: HTMLImageElement | null }>({});
     const pdfDocRef = useRef<any>(null); // Store PDF document reference
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -220,15 +221,55 @@ export default function RedactPDF() {
         }
     };
 
+    // Get actual image bounds (accounting for object-contain)
+    const getImageBounds = (pageId: string) => {
+        const container = canvasRefs.current[pageId];
+        const image = imageRefs.current[pageId];
+        if (!container || !image) return null;
+
+        const containerRect = container.getBoundingClientRect();
+        const imageRect = image.getBoundingClientRect();
+        
+        // Calculate the actual image position relative to container
+        const imageLeft = imageRect.left - containerRect.left;
+        const imageTop = imageRect.top - containerRect.top;
+        const imageWidth = imageRect.width;
+        const imageHeight = imageRect.height;
+        const containerWidth = containerRect.width;
+        const containerHeight = containerRect.height;
+
+        return {
+            left: imageLeft,
+            top: imageTop,
+            width: imageWidth,
+            height: imageHeight,
+            containerWidth,
+            containerHeight
+        };
+    };
+
     const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>, pageId: string) => {
         if (e.button !== 0) return; // Only left mouse button
         
+        const bounds = getImageBounds(pageId);
+        if (!bounds) return;
+
         const container = canvasRefs.current[pageId];
         if (!container) return;
 
-        const rect = container.getBoundingClientRect();
-        const x = ((e.clientX - rect.left) / rect.width) * 100;
-        const y = ((e.clientY - rect.top) / rect.height) * 100;
+        const containerRect = container.getBoundingClientRect();
+        const mouseX = e.clientX - containerRect.left;
+        const mouseY = e.clientY - containerRect.top;
+
+        // Check if click is within image bounds
+        if (mouseX < bounds.left || mouseX > bounds.left + bounds.width ||
+            mouseY < bounds.top || mouseY > bounds.top + bounds.height) {
+            return; // Click outside image, ignore
+        }
+
+        // Calculate percentage relative to image, not container
+        const x = ((mouseX - bounds.left) / bounds.width) * 100;
+        const y = ((mouseY - bounds.top) / bounds.height) * 100;
 
         setIsDragging(true);
         setDragStart({ x, y });
@@ -238,12 +279,23 @@ export default function RedactPDF() {
     const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>, pageId: string) => {
         if (!isDragging || !dragStart || !currentRedaction) return;
 
+        const bounds = getImageBounds(pageId);
+        if (!bounds) return;
+
         const container = canvasRefs.current[pageId];
         if (!container) return;
 
-        const rect = container.getBoundingClientRect();
-        const currentX = ((e.clientX - rect.left) / rect.width) * 100;
-        const currentY = ((e.clientY - rect.top) / rect.height) * 100;
+        const containerRect = container.getBoundingClientRect();
+        const mouseX = e.clientX - containerRect.left;
+        const mouseY = e.clientY - containerRect.top;
+
+        // Constrain to image bounds
+        const constrainedX = Math.max(bounds.left, Math.min(mouseX, bounds.left + bounds.width));
+        const constrainedY = Math.max(bounds.top, Math.min(mouseY, bounds.top + bounds.height));
+
+        // Calculate percentage relative to image
+        const currentX = ((constrainedX - bounds.left) / bounds.width) * 100;
+        const currentY = ((constrainedY - bounds.top) / bounds.height) * 100;
 
         const x = Math.min(dragStart.x, currentX);
         const y = Math.min(dragStart.y, currentY);
@@ -322,6 +374,10 @@ export default function RedactPDF() {
 
         try {
             const pdf = pdfDocRef.current;
+            const normalizedSearch = searchText.toLowerCase().trim();
+            const escapedSearch = normalizedSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            // Use word boundary regex for whole word matching
+            const searchRegex = new RegExp(`\\b${escapedSearch}\\b`, 'gi');
 
             // Search through all pages
             for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
@@ -331,18 +387,24 @@ export default function RedactPDF() {
                 if (!pageData || !pageData.pageObject) continue;
 
                 const textContent = await page.getTextContent();
-                const viewport = page.getViewport({ scale: 1.0 });
                 const pageWidth = pageData.pageWidth;
                 const pageHeight = pageData.pageHeight;
 
-                // Build full text string with positions
-                const textItems: Array<{ text: string; x: number; y: number; width: number; height: number }> = [];
+                // Build text items with positions - search each item individually
+                const textItems: Array<{ 
+                    text: string; 
+                    x: number; 
+                    y: number; 
+                    width: number; 
+                    height: number;
+                    fontSize: number;
+                }> = [];
                 
                 for (const item of textContent.items) {
                     if (item.str && typeof item.str === 'string' && item.transform && item.transform.length >= 6) {
                         const x = item.transform[4];
                         const y = item.transform[5];
-                        const fontSize = item.height || 12;
+                        const fontSize = item.height || Math.abs(item.transform[0]) || 12;
                         const textWidth = item.width || (item.str.length * fontSize * 0.6);
                         
                         textItems.push({
@@ -351,78 +413,67 @@ export default function RedactPDF() {
                             y,
                             width: textWidth,
                             height: fontSize,
+                            fontSize: fontSize,
                         });
                     }
                 }
-                
-                // Find exact word matches (case-insensitive)
-                const normalizedSearch = searchText.toLowerCase().trim();
-                const escapedSearch = normalizedSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const searchRegex = new RegExp(`\\b${escapedSearch}\\b`, 'gi');
-                
-                // Combine text items into full text for searching
-                let fullText = '';
+
+                // Search each text item for exact word matches
                 for (const item of textItems) {
-                    fullText += item.text;
-                }
-                
-                // Find all matches
-                let match;
-                
-                while ((match = searchRegex.exec(fullText)) !== null) {
-                    const matchStart = match.index;
-                    const matchEnd = matchStart + match[0].length;
+                    const itemText = item.text;
                     
-                    // Find which text items contain this match
-                    let currentCharIndex = 0;
-                    let startItemIndex = -1;
-                    let endItemIndex = -1;
+                    // Use regex to find all occurrences of the search term as whole words
+                    const wordRegex = new RegExp(`\\b${escapedSearch}\\b`, 'gi');
+                    let match;
+                    let searchIndex = 0;
                     
-                    for (let i = 0; i < textItems.length; i++) {
-                        const itemLength = textItems[i].text.length;
-                        const itemStart = currentCharIndex;
-                        const itemEnd = currentCharIndex + itemLength;
+                    while ((match = wordRegex.exec(itemText)) !== null) {
+                        const matchStart = match.index;
+                        const matchEnd = matchStart + match[0].length;
                         
-                        if (matchStart >= itemStart && matchStart < itemEnd) {
-                            startItemIndex = i;
-                        }
-                        if (matchEnd > itemStart && matchEnd <= itemEnd) {
-                            endItemIndex = i;
-                            break;
-                        }
+                        // Calculate widths: use proportional width based on character count
+                        const totalChars = itemText.length;
+                        const beforeWidth = (matchStart / totalChars) * item.width;
+                        const wordWidth = (match[0].length / totalChars) * item.width;
                         
-                        currentCharIndex += itemLength;
-                    }
-                    
-                    if (startItemIndex !== -1 && endItemIndex !== -1) {
-                        // Calculate bounding box for the matched text
-                        const startItem = textItems[startItemIndex];
-                        const endItem = textItems[endItemIndex];
+                        // Calculate exact bounding box
+                        const wordX = item.x + beforeWidth;
+                        const wordY = item.y;
+                        const wordHeight = item.height;
                         
-                        const minX = startItem.x;
-                        const maxX = endItem.x + endItem.width;
-                        const minY = Math.min(...textItems.slice(startItemIndex, endItemIndex + 1).map(item => item.y));
-                        const maxY = Math.max(...textItems.slice(startItemIndex, endItemIndex + 1).map(item => item.y + item.height));
+                        // Add small buffer to ensure full coverage (1% of width/height)
+                        const bufferX = item.width * 0.01;
+                        const bufferY = item.height * 0.01;
                         
-                        // Convert to percentage (PDF origin is bottom-left)
+                        const minX = Math.max(0, wordX - bufferX);
+                        const maxX = wordX + wordWidth + bufferX;
+                        const minY = Math.max(0, wordY - bufferY);
+                        const maxY = wordY + wordHeight + bufferY;
+
+                        // Convert to percentage (PDF origin is bottom-left, Y increases upward)
                         const pdfMinY = pageHeight - maxY;
                         const pdfMaxY = pageHeight - minY;
-                        
-                        const xPercent = (minX / pageWidth) * 100;
-                        const yPercent = (pdfMinY / pageHeight) * 100;
-                        const widthPercent = ((maxX - minX) / pageWidth) * 100;
-                        const heightPercent = ((pdfMaxY - pdfMinY) / pageHeight) * 100;
-                        
-                        if (widthPercent > 0 && heightPercent > 0) {
+
+                        const xPercent = Math.max(0, (minX / pageWidth) * 100);
+                        const yPercent = Math.max(0, (pdfMinY / pageHeight) * 100);
+                        const widthPercent = Math.min(((maxX - minX) / pageWidth) * 100, 100 - xPercent);
+                        const heightPercent = Math.min(((pdfMaxY - pdfMinY) / pageHeight) * 100, 100 - yPercent);
+
+                        if (widthPercent > 0.1 && heightPercent > 0.1) {
                             foundRedactions.push({
-                                id: `search-${Date.now()}-${Math.random()}-${matchStart}`,
-                                x: Math.max(0, Math.min(xPercent, 100)),
-                                y: Math.max(0, Math.min(yPercent, 100)),
-                                width: Math.min(widthPercent, 100 - xPercent),
-                                height: Math.min(heightPercent, 100 - yPercent),
+                                id: `search-${Date.now()}-${Math.random()}-${pageNum}-${matchStart}`,
+                                x: xPercent,
+                                y: yPercent,
+                                width: widthPercent,
+                                height: heightPercent,
                                 pageIndex: pageNum - 1,
                                 searchTerm: searchText,
                             });
+                        }
+                        
+                        // Prevent infinite loop
+                        if (match.index === wordRegex.lastIndex) {
+                            wordRegex.lastIndex++;
                         }
                     }
                 }
@@ -461,38 +512,110 @@ export default function RedactPDF() {
     };
 
     const handleRedact = async () => {
-        if (!file || redactions.length === 0) return;
+        if (!file || redactions.length === 0 || !pdfDocRef.current) return;
 
         setIsProcessing(true);
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("redactions", JSON.stringify(redactions));
-        formData.append("redactionColor", redactionColor);
 
         try {
-            const response = await fetch("/api/redact-pdf", {
-                method: "POST",
-                body: formData,
+            const { PDFDocument, rgb } = await import('pdf-lib');
+            const pdf = pdfDocRef.current;
+            const newPdfDoc = await PDFDocument.create();
+
+            // Group redactions by page
+            const redactionsByPage: { [pageIndex: number]: RedactionArea[] } = {};
+            redactions.forEach((redaction) => {
+                if (!redactionsByPage[redaction.pageIndex]) {
+                    redactionsByPage[redaction.pageIndex] = [];
+                }
+                redactionsByPage[redaction.pageIndex].push(redaction);
             });
 
-            if (response.ok) {
-                const blob = await response.blob();
-                const downloadUrl = URL.createObjectURL(blob);
+            const color = hexToRgb(redactionColor);
 
-                setResult({
-                    fileName: `redacted_${file.name}`,
-                    downloadUrl: downloadUrl,
-                });
-            } else {
-                const error = await response.json();
-                alert(error.error || "Failed to redact PDF");
+            // Process each page
+            for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                const page = await pdf.getPage(pageNum);
+                const pageData = pages.find(p => p.originalIndex === pageNum - 1);
+                
+                if (!pageData) continue;
+
+                // Render page to canvas at high quality
+                const viewport = page.getViewport({ scale: 2.0 }); // Higher scale for better quality
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                
+                if (!context) continue;
+
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                await page.render({
+                    canvasContext: context as any,
+                    viewport: viewport,
+                    canvas: canvas as any
+                }).promise;
+
+                // Draw redaction boxes on the canvas
+                const pageRedactions = redactionsByPage[pageNum - 1] || [];
+                for (const redaction of pageRedactions) {
+                    // Convert percentage to canvas coordinates
+                    const x = (redaction.x / 100) * canvas.width;
+                    const y = (redaction.y / 100) * canvas.height;
+                    const width = (redaction.width / 100) * canvas.width;
+                    const height = (redaction.height / 100) * canvas.height;
+
+                    // Draw redaction box
+                    context.fillStyle = redactionColor;
+                    context.fillRect(
+                        Math.max(0, x), 
+                        Math.max(0, y), 
+                        width, 
+                        height
+                    );
+                }
+
+                // Convert canvas to JPEG image
+                const imageData = canvas.toDataURL('image/jpeg', 0.95);
+                const imageBytes = await fetch(imageData).then(res => res.arrayBuffer());
+                const image = await newPdfDoc.embedJpg(imageBytes);
+
+                // Create new page with the redacted image
+                const { width, height } = image.scale(1);
+                const pdfPage = newPdfDoc.addPage([width, height]);
+                pdfPage.drawImage(image, { x: 0, y: 0, width, height });
             }
+
+            // Save the redacted PDF
+            const pdfBytes = await newPdfDoc.save({
+                useObjectStreams: false,
+                addDefaultPage: false,
+            });
+
+            const blob = new Blob([pdfBytes as any], { type: 'application/pdf' });
+            const downloadUrl = URL.createObjectURL(blob);
+
+            setResult({
+                fileName: `redacted_${file.name}`,
+                downloadUrl: downloadUrl,
+            });
         } catch (error) {
             console.error("Redact error:", error);
-            alert("An error occurred during PDF redaction");
+            alert("An error occurred during PDF redaction: " + (error instanceof Error ? error.message : String(error)));
         } finally {
             setIsProcessing(false);
         }
+    };
+
+    // Helper function to convert hex to RGB
+    const hexToRgb = (hex: string): { r: number; g: number; b: number } => {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result
+            ? {
+                  r: parseInt(result[1], 16),
+                  g: parseInt(result[2], 16),
+                  b: parseInt(result[3], 16),
+              }
+            : { r: 0, g: 0, b: 0 };
     };
 
     const handleReset = () => {
@@ -807,6 +930,9 @@ export default function RedactPDF() {
                                 style={{ minHeight: "500px" }}
                             >
                                 <img
+                                    ref={(el) => {
+                                        if (el) imageRefs.current[selectedPage.id] = el;
+                                    }}
                                     src={selectedPage.thumbnailUrl}
                                     alt={`Page ${selectedPage.originalIndex + 1}`}
                                     className="w-full h-full object-contain"
@@ -814,47 +940,72 @@ export default function RedactPDF() {
                                 />
 
                                 {/* Existing Redactions */}
-                                {pageRedactions.map((redaction) => (
-                                    <div
-                                        key={redaction.id}
-                                        className="absolute border-2 border-red-500 bg-red-500/20 pointer-events-none group"
-                                        style={{
-                                            left: `${redaction.x}%`,
-                                            top: `${redaction.y}%`,
-                                            width: `${redaction.width}%`,
-                                            height: `${redaction.height}%`,
-                                        }}
-                                    >
-                                        <div
-                                            className="absolute inset-0"
-                                            style={{ backgroundColor: redactionColor }}
-                                        />
-                                        <button
-                                            onClick={() => removeRedaction(redaction.id)}
-                                            className="absolute -top-2 -right-2 w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-auto shadow-lg"
-                                        >
-                                            <X size={12} />
-                                        </button>
-                                    </div>
-                                ))}
+                                {(() => {
+                                    const bounds = getImageBounds(selectedPage.id);
+                                    if (!bounds) return null;
+                                    
+                                    return pageRedactions.map((redaction) => {
+                                        // Convert percentage to actual pixels relative to image
+                                        // Use exact dimensions - no padding needed
+                                        const left = bounds.left + (redaction.x / 100) * bounds.width;
+                                        const top = bounds.top + (redaction.y / 100) * bounds.height;
+                                        const width = (redaction.width / 100) * bounds.width;
+                                        const height = (redaction.height / 100) * bounds.height;
+                                        
+                                        return (
+                                            <div
+                                                key={redaction.id}
+                                                className="absolute pointer-events-none group"
+                                                style={{
+                                                    left: `${Math.max(0, left)}px`,
+                                                    top: `${Math.max(0, top)}px`,
+                                                    width: `${width}px`,
+                                                    height: `${height}px`,
+                                                }}
+                                            >
+                                                <div
+                                                    className="absolute inset-0"
+                                                    style={{ backgroundColor: redactionColor }}
+                                                />
+                                                <button
+                                                    onClick={() => removeRedaction(redaction.id)}
+                                                    className="absolute -top-2 -right-2 w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-auto shadow-lg"
+                                                >
+                                                    <X size={12} />
+                                                </button>
+                                            </div>
+                                        );
+                                    });
+                                })()}
 
                                 {/* Current Redaction Being Drawn */}
-                                {currentRedaction && currentRedaction.width > 0 && currentRedaction.height > 0 && (
-                                    <div
-                                        className="absolute border-2 border-red-500 bg-red-500/20 pointer-events-none"
-                                        style={{
-                                            left: `${currentRedaction.x}%`,
-                                            top: `${currentRedaction.y}%`,
-                                            width: `${currentRedaction.width}%`,
-                                            height: `${currentRedaction.height}%`,
-                                        }}
-                                    >
+                                {currentRedaction && currentRedaction.width > 0 && currentRedaction.height > 0 && (() => {
+                                    const bounds = getImageBounds(selectedPage.id);
+                                    if (!bounds) return null;
+                                    
+                                    // Convert percentage to actual pixels relative to image
+                                    const left = bounds.left + (currentRedaction.x / 100) * bounds.width;
+                                    const top = bounds.top + (currentRedaction.y / 100) * bounds.height;
+                                    const width = (currentRedaction.width / 100) * bounds.width;
+                                    const height = (currentRedaction.height / 100) * bounds.height;
+                                    
+                                    return (
                                         <div
-                                            className="absolute inset-0 border-2 border-dashed border-red-600"
-                                            style={{ backgroundColor: `${redactionColor}40` }}
-                                        />
-                                    </div>
-                                )}
+                                            className="absolute pointer-events-none"
+                                            style={{
+                                                left: `${left}px`,
+                                                top: `${top}px`,
+                                                width: `${width}px`,
+                                                height: `${height}px`,
+                                            }}
+                                        >
+                                            <div
+                                                className="absolute inset-0 border-2 border-dashed border-red-600"
+                                                style={{ backgroundColor: `${redactionColor}60` }}
+                                            />
+                                        </div>
+                                    );
+                                })()}
 
                                 {/* Instructions Overlay */}
                                 {redactions.length === 0 && !isDragging && (

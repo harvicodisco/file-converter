@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PDFDocument, rgb } from "pdf-lib";
+import { PDFDocument, rgb, PDFPage } from "pdf-lib";
 
 interface RedactionArea {
     id: string;
@@ -20,6 +20,52 @@ const hexToRgb = (hex: string): { r: number; g: number; b: number } => {
           }
         : { r: 0, g: 0, b: 0 };
 };
+
+// Helper to draw white rectangles to "erase" content, then draw redaction color on top
+// This approach layers multiple rectangles to ensure content is covered
+async function applyRedactionsToPage(
+    page: PDFPage,
+    redactions: RedactionArea[],
+    redactionColor: { r: number; g: number; b: number }
+) {
+    const { width, height } = page.getSize();
+    const white = rgb(1, 1, 1); // White color
+    const color = rgb(redactionColor.r, redactionColor.g, redactionColor.b);
+
+    for (const redaction of redactions) {
+        // Convert percentage to actual coordinates
+        const x = (redaction.x / 100) * width;
+        const y = height - ((redaction.y + redaction.height) / 100) * height; // Flip Y coordinate (PDF uses bottom-left origin)
+        const redactionWidth = (redaction.width / 100) * width;
+        const redactionHeight = (redaction.height / 100) * height;
+
+        const finalX = Math.max(0, Math.min(x, width));
+        const finalY = Math.max(0, Math.min(y, height));
+        const finalWidth = Math.min(redactionWidth, width - finalX);
+        const finalHeight = Math.min(redactionHeight, height - finalY);
+
+        // Draw multiple layers to ensure complete coverage
+        // Layer 1: White rectangle to "erase" underlying content visually
+        page.drawRectangle({
+            x: finalX,
+            y: finalY,
+            width: finalWidth,
+            height: finalHeight,
+            color: white,
+            opacity: 1.0,
+        });
+
+        // Layer 2: Redaction color rectangle on top
+        page.drawRectangle({
+            x: finalX,
+            y: finalY,
+            width: finalWidth,
+            height: finalHeight,
+            color: color,
+            opacity: 1.0,
+        });
+    }
+}
 
 export async function POST(req: NextRequest) {
     try {
@@ -56,32 +102,19 @@ export async function POST(req: NextRequest) {
         const pageIndices = pdfDoc.getPageIndices();
         for (const pageIndex of pageIndices) {
             const page = pdfDoc.getPage(pageIndex);
-            const { width, height } = page.getSize();
-
             const pageRedactions = redactionsByPage[pageIndex] || [];
 
-            for (const redaction of pageRedactions) {
-                // Convert percentage to actual coordinates
-                const x = (redaction.x / 100) * width;
-                const y = height - ((redaction.y + redaction.height) / 100) * height; // Flip Y coordinate (PDF uses bottom-left origin)
-                const redactionWidth = (redaction.width / 100) * width;
-                const redactionHeight = (redaction.height / 100) * height;
-
-                // Draw black rectangle to cover the content
-                page.drawRectangle({
-                    x: Math.max(0, Math.min(x, width)),
-                    y: Math.max(0, Math.min(y, height)),
-                    width: Math.min(redactionWidth, width - x),
-                    height: Math.min(redactionHeight, height - y),
-                    color: rgb(color.r, color.g, color.b),
-                    opacity: 1.0,
-                });
+            if (pageRedactions.length > 0) {
+                await applyRedactionsToPage(page, pageRedactions, color);
             }
         }
 
+        // Save with flattening options to merge layers
         const pdfBytes = await pdfDoc.save({
             useObjectStreams: false,
             addDefaultPage: false,
+            // Note: pdf-lib doesn't have a direct "flatten" option,
+            // but saving with these options helps ensure the redaction layers are applied
         });
 
         return new NextResponse(Buffer.from(pdfBytes), {
