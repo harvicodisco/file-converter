@@ -5,12 +5,13 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Upload, FileText, CheckCircle2, Loader2, ArrowRight,
   Merge, Scissors, Minimize2, Sheet, Presentation,
-  Image as ImageIcon, FileImage, FileSpreadsheet, Zap, Settings, Globe, Crop, Scan, Hash, Wrench, Eraser
+  Image as ImageIcon, FileImage, FileSpreadsheet, Zap, Settings, Globe, Crop, Scan, Hash, Wrench, Eraser, Pencil
 } from "lucide-react";
 import Link from "next/link";
 
 const tools = [
   { name: "Merge PDF", href: "/merge-pdf", icon: Merge, description: "Combine multiple PDFs into one file", color: "text-blue-600", bg: "bg-blue-50" },
+  { name: "Edit PDF", href: "/edit-pdf", icon: Pencil, description: "Add text, shapes, and freehand drawing to PDF", color: "text-indigo-600", bg: "bg-indigo-50" },
   { name: "Split PDF", href: "/split-pdf", icon: Scissors, description: "Extract pages from your PDF", color: "text-indigo-600", bg: "bg-indigo-50" },
   { name: "Organize PDF", href: "/organize-pdf", icon: Settings, description: "Rearrange, delete, or reorder pages", color: "text-purple-600", bg: "bg-purple-50" },
   { name: "Crop PDF", href: "/crop-pdf", icon: Crop, description: "Remove unwanted margins and areas", color: "text-orange-600", bg: "bg-orange-50" },

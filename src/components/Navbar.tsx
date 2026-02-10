@@ -21,7 +21,8 @@ import {
     Scan,
     Hash,
     Wrench,
-    Eraser
+    Eraser,
+    Pencil
 } from "lucide-react";
 
 
@@ -43,6 +44,7 @@ export default function Navbar() {
                 { name: "Add Page Numbers", href: "/add-page-numbers", icon: Hash },
                 { name: "Repair PDF", href: "/repair-pdf", icon: Wrench },
                 { name: "Redact PDF", href: "/redact-pdf", icon: Eraser },
+                { name: "Edit PDF", href: "/edit-pdf", icon: Pencil },
             ]
         },
         {

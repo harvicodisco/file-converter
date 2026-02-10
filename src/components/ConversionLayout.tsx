@@ -9,9 +9,10 @@ interface ConversionLayoutProps {
     settingsPanel: React.ReactNode; // The right sidebar
     title: string;
     description?: string;
+    variant?: 'default' | 'full';
 }
 
-export default function ConversionLayout({ children, settingsPanel, title, description }: ConversionLayoutProps) {
+export default function ConversionLayout({ children, settingsPanel, title, description, variant = 'default' }: ConversionLayoutProps) {
     return (
         <div className="min-h-screen bg-[#f8fafc] text-zinc-900 pt-20 pb-0 overflow-hidden flex flex-col h-screen selection:bg-indigo-100 selection:text-indigo-600">
             {/* Soft Background Elements */}
@@ -23,19 +24,22 @@ export default function ConversionLayout({ children, settingsPanel, title, descr
 
             <div className="flex-1 flex overflow-hidden">
                 {/* Main Preview Area */}
-                <main className="flex-1 relative overflow-y-auto overflow-x-hidden p-4 sm:p-8 md:p-12 flex flex-col items-center">
-                    <div className="absolute top-6 left-6 z-30">
-                        <Link href="/" className="inline-flex items-center gap-2 text-zinc-500 hover:text-indigo-600 font-bold transition-all bg-white/80 backdrop-blur-md px-5 py-2.5 rounded-2xl shadow-sm border border-zinc-200/50 hover:shadow-md active:scale-95 group">
-                            <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
-                            <span>Back to Home</span>
-                        </Link>
-                    </div>
+                <main className={`flex-1 relative overflow-hidden flex flex-col items-center ${variant === 'full' ? 'p-0' : 'p-4 sm:p-8 md:p-12'}`}>
+                    {variant !== 'full' && (
+                        <div className="absolute top-6 left-6 z-30">
+                            <Link href="/" className="inline-flex items-center gap-2 text-zinc-500 hover:text-indigo-600 font-bold transition-all bg-white/80 backdrop-blur-md px-5 py-2.5 rounded-2xl shadow-sm border border-zinc-200/50 hover:shadow-md active:scale-95 group">
+                                <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
+                                <span>Back to Home</span>
+                            </Link>
+                        </div>
+                    )}
 
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.5 }}
-                        className="w-full mt-14 flex-1 max-w-6xl bg-white/70 backdrop-blur-sm rounded-[2.5rem] shadow-2xl shadow-zinc-200/50 border border-white/50 flex flex-col overflow-hidden"
+                        className={`w-full flex-1 bg-white/70 backdrop-blur-sm shadow-2xl shadow-zinc-200/50 border-white/50 flex flex-col overflow-hidden ${variant === 'full' ? 'mt-0 rounded-none border-0' : 'mt-14 max-w-[95vw] sm:max-w-7xl rounded-[2.5rem] border'
+                            }`}
                     >
                         {/* Toolbar / Title for Preview */}
                         <div className="h-14 border-b border-zinc-100 flex items-center justify-between px-8 bg-white/40 sticky top-0 z-20 backdrop-blur-md">
@@ -47,25 +51,25 @@ export default function ConversionLayout({ children, settingsPanel, title, descr
                         </div>
 
                         {/* Actual Content Container */}
-                        <div className="flex-1 relative overflow-auto p-4 flex items-center justify-center">
+                        <div className={`${variant === 'full' ? 'p-0' : 'p-4'} flex-1 relative overflow-hidden flex items-center justify-center`}>
                             {children}
                         </div>
                     </motion.div>
                 </main>
 
                 {/* Right Sidebar - Settings */}
-                <aside className="w-full sm:w-[380px] md:w-[420px] bg-white border-l border-zinc-100 flex-shrink-0 flex flex-col h-full z-20 shadow-[-20px_0_50px_-15px_rgba(0,0,0,0.03)]">
-                    <div className="p-8 border-b border-zinc-50">
-                        <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 mb-4">
+                <aside className={`w-full ${variant === 'full' ? 'sm:w-[320px] md:w-[350px]' : 'sm:w-[380px] md:w-[420px]'} bg-white border-l border-zinc-100 flex-shrink-0 flex flex-col h-full z-20 shadow-[-20px_0_50px_-15px_rgba(0,0,0,0.03)]`}>
+                    <div className={`${variant === 'full' ? 'p-4' : 'p-8'} border-b border-zinc-50`}>
+                        <div className={`inline-flex items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 ${variant === 'full' ? 'w-8 h-8 mb-2' : 'w-10 h-10 mb-4'}`}>
                             <Link href="/">
                                 <span className="font-black">U</span>
                             </Link>
                         </div>
-                        <h1 className="text-2xl font-black text-zinc-900 leading-tight tracking-tight">{title}</h1>
-                        {description && <p className="text-sm font-bold text-zinc-400 mt-1.5 leading-relaxed">{description}</p>}
+                        <h1 className={`${variant === 'full' ? 'text-lg' : 'text-2xl'} font-black text-zinc-900 leading-tight tracking-tight`}>{title}</h1>
+                        {description && <p className="text-[11px] font-bold text-zinc-400 mt-1 leading-relaxed">{description}</p>}
                     </div>
 
-                    <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                    <div className={`flex-1 overflow-y-auto ${variant === 'full' ? 'p-4' : 'p-8'} custom-scrollbar`}>
                         {settingsPanel}
                     </div>
                 </aside>
