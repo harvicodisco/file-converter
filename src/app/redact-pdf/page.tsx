@@ -145,7 +145,7 @@ export default function RedactPDF() {
                 try {
                     const textContent = await pageData.pageObject.getTextContent();
                     const viewport = pageData.pageObject.getViewport({ scale: 1.0 });
-                    
+
                     // Check if any text items intersect with the selected area
                     // PDF coordinates: origin is bottom-left, Y increases upward
                     const pdfY = pageHeight - (actualY + actualHeight);
@@ -156,7 +156,7 @@ export default function RedactPDF() {
                             // item.transform[4] is X, item.transform[5] is Y
                             const textX = item.transform[4];
                             const textY = item.transform[5];
-                            
+
                             // Check if text is within the selected area
                             if (
                                 textX >= actualX &&
@@ -186,25 +186,25 @@ export default function RedactPDF() {
                         Math.floor(actualWidth),
                         Math.floor(actualHeight)
                     );
-                    
+
                     // Check if there are non-white pixels (with some tolerance for near-white)
                     const pixels = imgData.data;
                     let nonWhitePixels = 0;
                     const totalPixels = pixels.length / 4; // RGBA = 4 values per pixel
-                    
+
                     for (let i = 0; i < pixels.length; i += 4) {
                         const r = pixels[i];
                         const g = pixels[i + 1];
                         const b = pixels[i + 2];
                         const a = pixels[i + 3];
-                        
+
                         // Check if pixel is not white/transparent
                         // Consider pixels with alpha > 0 and not near-white (RGB > 240)
                         if (a > 10 && (r < 240 || g < 240 || b < 240)) {
                             nonWhitePixels++;
                         }
                     }
-                    
+
                     // If more than 5% of pixels are non-white, consider it as having content
                     const contentRatio = nonWhitePixels / totalPixels;
                     if (contentRatio > 0.05) {
@@ -229,28 +229,56 @@ export default function RedactPDF() {
 
         const containerRect = container.getBoundingClientRect();
         const imageRect = image.getBoundingClientRect();
-        
-        // Calculate the actual image position relative to container
-        const imageLeft = imageRect.left - containerRect.left;
-        const imageTop = imageRect.top - containerRect.top;
-        const imageWidth = imageRect.width;
-        const imageHeight = imageRect.height;
-        const containerWidth = containerRect.width;
-        const containerHeight = containerRect.height;
+
+        // Natural dimensions of the image (PDF pixels/points)
+        const naturalWidth = image.naturalWidth;
+        const naturalHeight = image.naturalHeight;
+
+        if (!naturalWidth || !naturalHeight) {
+            // Fallback if natural dimensions aren't available yet
+            return {
+                left: imageRect.left - containerRect.left,
+                top: imageRect.top - containerRect.top,
+                width: imageRect.width,
+                height: imageRect.height,
+                containerWidth: containerRect.width,
+                containerHeight: containerRect.height
+            };
+        }
+
+        // Calculate the actual rendered dimensions of the image content (object-contain logic)
+        const contentRatio = naturalWidth / naturalHeight;
+        const containerRatio = imageRect.width / imageRect.height;
+
+        let renderedWidth, renderedHeight, renderedLeft, renderedTop;
+
+        if (containerRatio > contentRatio) {
+            // Container is wider than image, image is height-constrained
+            renderedHeight = imageRect.height;
+            renderedWidth = renderedHeight * contentRatio;
+            renderedLeft = (imageRect.width - renderedWidth) / 2;
+            renderedTop = 0;
+        } else {
+            // Container is taller than image, image is width-constrained
+            renderedWidth = imageRect.width;
+            renderedHeight = renderedWidth / contentRatio;
+            renderedLeft = 0;
+            renderedTop = (imageRect.height - renderedHeight) / 2;
+        }
 
         return {
-            left: imageLeft,
-            top: imageTop,
-            width: imageWidth,
-            height: imageHeight,
-            containerWidth,
-            containerHeight
+            left: (imageRect.left - containerRect.left) + renderedLeft,
+            top: (imageRect.top - containerRect.top) + renderedTop,
+            width: renderedWidth,
+            height: renderedHeight,
+            containerWidth: containerRect.width,
+            containerHeight: containerRect.height
         };
     };
 
     const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>, pageId: string) => {
         if (e.button !== 0) return; // Only left mouse button
-        
+
         const bounds = getImageBounds(pageId);
         if (!bounds) return;
 
@@ -310,7 +338,7 @@ export default function RedactPDF() {
 
         if (currentRedaction.width > 1 && currentRedaction.height > 1) {
             const pageData = pages.find(p => p.id === pageId);
-            
+
             if (pageData) {
                 // Check if the selected area contains content
                 const hasContent = await checkAreaHasContent(
@@ -376,92 +404,211 @@ export default function RedactPDF() {
             const pdf = pdfDocRef.current;
             const normalizedSearch = searchText.toLowerCase().trim();
             const escapedSearch = normalizedSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            // Use word boundary regex for whole word matching
             const searchRegex = new RegExp(`\\b${escapedSearch}\\b`, 'gi');
 
-            // Search through all pages
             for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                // Reset regex for each page to avoid stateful index issues
+                searchRegex.lastIndex = 0;
+
                 const page = await pdf.getPage(pageNum);
                 const pageData = pages.find(p => p.originalIndex === pageNum - 1);
-                
-                if (!pageData || !pageData.pageObject) continue;
 
-                const textContent = await page.getTextContent();
-                const pageWidth = pageData.pageWidth;
-                const pageHeight = pageData.pageHeight;
+                if (!pageData) continue;
 
-                // Build text items with positions - search each item individually
-                const textItems: Array<{ 
-                    text: string; 
-                    x: number; 
-                    y: number; 
-                    width: number; 
-                    height: number;
-                    fontSize: number;
+                // Use scale 1.0 to get coordinates in standard PDF points (matches text content)
+                const viewport = page.getViewport({ scale: 1.0 });
+                const textContent = await page.getTextContent({ disableCombineTextItems: true });
+
+                const pageWidth = viewport.width;
+                const pageHeight = viewport.height;
+
+                let fullText = "";
+                const textMap: Array<{
+                    pdfX: number;
+                    pdfY: number;
+                    pdfWidth: number;
+                    pdfHeight: number;
+                    charIndex: number;
+                    sourceItem: any; // Reference to the original PDF text item
                 }> = [];
-                
-                for (const item of textContent.items) {
-                    if (item.str && typeof item.str === 'string' && item.transform && item.transform.length >= 6) {
-                        const x = item.transform[4];
-                        const y = item.transform[5];
-                        const fontSize = item.height || Math.abs(item.transform[0]) || 12;
-                        const textWidth = item.width || (item.str.length * fontSize * 0.6);
-                        
-                        textItems.push({
-                            text: item.str,
-                            x,
-                            y,
-                            width: textWidth,
-                            height: fontSize,
-                            fontSize: fontSize,
-                        });
+
+                let lastItem: any = null;
+
+                for (const item of textContent.items as any[]) {
+                    if (!item.str) continue;
+
+                    const str = item.str;
+                    const transform = item.transform;
+
+                    const fontSize = Math.sqrt(transform[0] * transform[0] + transform[1] * transform[1]);
+                    const width = item.width || 0;
+                    const height = item.height || fontSize;
+
+                    // Detect if we should add a space between items
+                    if (lastItem) {
+                        const lastX = lastItem.transform[4] + lastItem.width;
+                        const lastY = lastItem.transform[5];
+                        const currX = transform[4];
+                        const currY = transform[5];
+
+                        // If on a different line or a significant horizontal gap
+                        const isDifferentLine = Math.abs(currY - lastY) > fontSize / 2;
+                        const hasGap = (currX - lastX) > (fontSize * 0.15); // Tightened gap detection
+
+                        if (isDifferentLine || hasGap) {
+                            fullText += " ";
+                        }
                     }
+
+                    // Create a temporary canvas context for measuring character widths
+                    // This allows us to handle proportional fonts accurately
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) {
+                        ctx.font = `${fontSize}px Arial, sans-serif`; // Approximation for measurement
+                        const totalCanvasWidth = ctx.measureText(str).width || 1;
+
+                        // Map each character in the string using accurate offsets
+                        for (let k = 0; k < str.length; k++) {
+                            const canvasOffset = ctx.measureText(str.substring(0, k)).width;
+                            const charCanvasWidth = ctx.measureText(str[k]).width;
+
+                            // Scale canvas offsets to PDF width
+                            const pdfOffset = (canvasOffset / totalCanvasWidth) * width;
+                            const charPdfWidth = (charCanvasWidth / totalCanvasWidth) * width;
+
+                            textMap.push({
+                                pdfX: transform[4] + pdfOffset,
+                                pdfY: transform[5],
+                                pdfWidth: charPdfWidth,
+                                pdfHeight: height,
+                                charIndex: fullText.length + k,
+                                sourceItem: item
+                            });
+                        }
+                    } else {
+                        // Fallback to average width if canvas fails
+                        for (let k = 0; k < str.length; k++) {
+                            const charWidth = width / str.length;
+                            textMap.push({
+                                pdfX: transform[4] + (k * charWidth),
+                                pdfY: transform[5],
+                                pdfWidth: charWidth,
+                                pdfHeight: height,
+                                charIndex: fullText.length + k,
+                                sourceItem: item
+                            });
+                        }
+                    }
+
+                    fullText += str;
+                    lastItem = item;
                 }
 
-                // Search each text item for exact word matches
-                for (const item of textItems) {
-                    const itemText = item.text;
-                    
-                    // Use regex to find all occurrences of the search term as whole words
-                    const wordRegex = new RegExp(`\\b${escapedSearch}\\b`, 'gi');
-                    let match;
-                    let searchIndex = 0;
-                    
-                    while ((match = wordRegex.exec(itemText)) !== null) {
-                        const matchStart = match.index;
-                        const matchEnd = matchStart + match[0].length;
-                        
-                        // Calculate widths: use proportional width based on character count
-                        const totalChars = itemText.length;
-                        const beforeWidth = (matchStart / totalChars) * item.width;
-                        const wordWidth = (match[0].length / totalChars) * item.width;
-                        
-                        // Calculate exact bounding box
-                        const wordX = item.x + beforeWidth;
-                        const wordY = item.y;
-                        const wordHeight = item.height;
-                        
-                        // Add small buffer to ensure full coverage (1% of width/height)
-                        const bufferX = item.width * 0.01;
-                        const bufferY = item.height * 0.01;
-                        
-                        const minX = Math.max(0, wordX - bufferX);
-                        const maxX = wordX + wordWidth + bufferX;
-                        const minY = Math.max(0, wordY - bufferY);
-                        const maxY = wordY + wordHeight + bufferY;
+                // Perform search
+                let match;
+                while ((match = searchRegex.exec(fullText)) !== null) {
+                    const matchStart = match.index;
+                    const matchEnd = matchStart + match[0].length;
 
-                        // Convert to percentage (PDF origin is bottom-left, Y increases upward)
-                        const pdfMinY = pageHeight - maxY;
-                        const pdfMaxY = pageHeight - minY;
+                    // Find atoms corresponding to the match
+                    const matchAtoms = textMap.filter(atom =>
+                        atom.charIndex >= matchStart && atom.charIndex < matchEnd
+                    );
 
-                        const xPercent = Math.max(0, (minX / pageWidth) * 100);
-                        const yPercent = Math.max(0, (pdfMinY / pageHeight) * 100);
-                        const widthPercent = Math.min(((maxX - minX) / pageWidth) * 100, 100 - xPercent);
-                        const heightPercent = Math.min(((pdfMaxY - pdfMinY) / pageHeight) * 100, 100 - yPercent);
+                    if (matchAtoms.length > 0) {
+                        // Check if all matched characters come from the same source text item
+                        const firstSourceItem = matchAtoms[0].sourceItem;
+                        const allSameSource = matchAtoms.every(atom => atom.sourceItem === firstSourceItem);
 
-                        if (widthPercent > 0.1 && heightPercent > 0.1) {
+                        let minX: number, maxX: number, minY: number, maxY: number;
+
+                        if (allSameSource && firstSourceItem) {
+                            // All characters from same item - use the item's actual bounds
+                            const transform = firstSourceItem.transform;
+                            const itemWidth = firstSourceItem.width || 0;
+                            const itemHeight = firstSourceItem.height || Math.sqrt(transform[0] * transform[0] + transform[1] * transform[1]);
+
+                            // Find the portion of the item that contains our match
+                            const firstAtom = matchAtoms[0];
+                            const lastAtom = matchAtoms[matchAtoms.length - 1];
+
+                            // Get the actual last character to determine if we need extra padding
+                            // Calculate which character we're looking at based on map index
+                            const lastChar = fullText[lastAtom.charIndex];
+
+                            // Dynamic padding based on character width characteristics
+                            let headerPadding = 0.01; // Tight horizontal start
+                            let trailerPadding = 0.1; // Moderate base trailer
+
+                            const wideChars = ['m', 'w', 'M', 'W', '@', '%', 'O', 'Q', 'G', 'D'];
+                            const narrowChars = ['i', 'l', 't', 'f', 'I', 'j', '.', ',', ';', ':'];
+
+                            if (wideChars.includes(lastChar)) {
+                                trailerPadding = 0.25; // Balanced padding for wide characters
+                            } else if (narrowChars.includes(lastChar)) {
+                                trailerPadding = 0.05; // Extra tight for narrow characters
+                            }
+
+                            const pdfRect = [
+                                firstAtom.pdfX - (firstAtom.pdfWidth * headerPadding),
+                                transform[5] - (itemHeight * 0.2), // Use item baseline
+                                lastAtom.pdfX + (lastAtom.pdfWidth * (1 + trailerPadding)),
+                                transform[5] + (itemHeight * 0.75) // Use item height
+                            ];
+
+                            const viewRect = viewport.convertToViewportRectangle(pdfRect as any);
+                            minX = Math.min(viewRect[0], viewRect[2]);
+                            maxX = Math.max(viewRect[0], viewRect[2]);
+                            minY = Math.min(viewRect[1], viewRect[3]);
+                            maxY = Math.max(viewRect[1], viewRect[3]);
+                        } else {
+                            // Match spans multiple items - use character-level calculation
+                            minX = Infinity;
+                            maxX = -Infinity;
+                            minY = Infinity;
+                            maxY = -Infinity;
+
+                            matchAtoms.forEach(atom => {
+                                const pdfRect = [
+                                    atom.pdfX - (atom.pdfWidth * 0.02),
+                                    atom.pdfY - (atom.pdfHeight * 0.2),
+                                    atom.pdfX + (atom.pdfWidth * 1.1),
+                                    atom.pdfY + (atom.pdfHeight * 0.75)
+                                ];
+
+                                const viewRect = viewport.convertToViewportRectangle(pdfRect as any);
+
+                                minX = Math.min(minX, viewRect[0], viewRect[2]);
+                                maxX = Math.max(maxX, viewRect[0], viewRect[2]);
+                                minY = Math.min(minY, viewRect[1], viewRect[3]);
+                                maxY = Math.max(maxY, viewRect[1], viewRect[3]);
+                            });
+                        }
+
+                        // Add very minimal final buffer
+                        let maxFontSize = 0;
+                        matchAtoms.forEach(atom => {
+                            maxFontSize = Math.max(maxFontSize, atom.pdfHeight);
+                        });
+
+                        const bufferX = maxFontSize * 0.05; // Tight final horizontal buffer
+                        const bufferY = maxFontSize * 0.02; // Tight final vertical buffer
+
+                        minX = Math.max(0, minX - bufferX);
+                        maxX = Math.min(pageWidth, maxX + bufferX);
+                        minY = Math.max(0, minY - bufferY);
+                        maxY = Math.min(pageHeight, maxY + bufferY);
+
+                        // Calculate percentages relative to viewport dimensions
+                        const xPercent = (minX / pageWidth) * 100;
+                        const yPercent = (minY / pageHeight) * 100;
+                        const widthPercent = ((maxX - minX) / pageWidth) * 100;
+                        const heightPercent = ((maxY - minY) / pageHeight) * 100;
+
+                        if (widthPercent > 0.01 && heightPercent > 0.01) {
                             foundRedactions.push({
-                                id: `search-${Date.now()}-${Math.random()}-${pageNum}-${matchStart}`,
+                                id: `search-${Date.now()}-${Math.random()}`,
                                 x: xPercent,
                                 y: yPercent,
                                 width: widthPercent,
@@ -469,11 +616,6 @@ export default function RedactPDF() {
                                 pageIndex: pageNum - 1,
                                 searchTerm: searchText,
                             });
-                        }
-                        
-                        // Prevent infinite loop
-                        if (match.index === wordRegex.lastIndex) {
-                            wordRegex.lastIndex++;
                         }
                     }
                 }
@@ -485,6 +627,13 @@ export default function RedactPDF() {
                     setSearchTerms(prev => [...prev, searchText.trim()]);
                 }
                 setSearchInput("");
+
+                // Automatically switch to the page containing the first redaction
+                const firstRedactionPageIndex = foundRedactions[0].pageIndex;
+                const pageToShow = pages.find(p => p.originalIndex === firstRedactionPageIndex);
+                if (pageToShow) {
+                    setSelectedPageId(pageToShow.id);
+                }
             } else {
                 setContentWarning(`No matches found for "${searchText}"`);
                 setTimeout(() => setContentWarning(null), 3000);
@@ -536,14 +685,14 @@ export default function RedactPDF() {
             for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
                 const page = await pdf.getPage(pageNum);
                 const pageData = pages.find(p => p.originalIndex === pageNum - 1);
-                
+
                 if (!pageData) continue;
 
                 // Render page to canvas at high quality
-                const viewport = page.getViewport({ scale: 2.0 }); // Higher scale for better quality
+                const viewport = page.getViewport({ scale: 1.0 }); // Higher scale for better quality
                 const canvas = document.createElement('canvas');
                 const context = canvas.getContext('2d');
-                
+
                 if (!context) continue;
 
                 canvas.height = viewport.height;
@@ -567,9 +716,9 @@ export default function RedactPDF() {
                     // Draw redaction box
                     context.fillStyle = redactionColor;
                     context.fillRect(
-                        Math.max(0, x), 
-                        Math.max(0, y), 
-                        width, 
+                        Math.max(0, x),
+                        Math.max(0, y),
+                        width,
                         height
                     );
                 }
@@ -611,10 +760,10 @@ export default function RedactPDF() {
         const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
         return result
             ? {
-                  r: parseInt(result[1], 16),
-                  g: parseInt(result[2], 16),
-                  b: parseInt(result[3], 16),
-              }
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16),
+            }
             : { r: 0, g: 0, b: 0 };
     };
 
@@ -891,11 +1040,10 @@ export default function RedactPDF() {
                                 <button
                                     key={page.id}
                                     onClick={() => setSelectedPageId(page.id)}
-                                    className={`flex-shrink-0 w-20 h-28 rounded-lg border-2 overflow-hidden transition-all ${
-                                        selectedPageId === page.id
-                                            ? "border-red-600 shadow-lg shadow-red-100"
-                                            : "border-zinc-200 hover:border-red-300"
-                                    }`}
+                                    className={`flex-shrink-0 w-20 h-28 rounded-lg border-2 overflow-hidden transition-all ${selectedPageId === page.id
+                                        ? "border-red-600 shadow-lg shadow-red-100"
+                                        : "border-zinc-200 hover:border-red-300"
+                                        }`}
                                 >
                                     <img
                                         src={page.thumbnailUrl}
@@ -943,7 +1091,7 @@ export default function RedactPDF() {
                                 {(() => {
                                     const bounds = getImageBounds(selectedPage.id);
                                     if (!bounds) return null;
-                                    
+
                                     return pageRedactions.map((redaction) => {
                                         // Convert percentage to actual pixels relative to image
                                         // Use exact dimensions - no padding needed
@@ -951,7 +1099,7 @@ export default function RedactPDF() {
                                         const top = bounds.top + (redaction.y / 100) * bounds.height;
                                         const width = (redaction.width / 100) * bounds.width;
                                         const height = (redaction.height / 100) * bounds.height;
-                                        
+
                                         return (
                                             <div
                                                 key={redaction.id}
@@ -982,13 +1130,13 @@ export default function RedactPDF() {
                                 {currentRedaction && currentRedaction.width > 0 && currentRedaction.height > 0 && (() => {
                                     const bounds = getImageBounds(selectedPage.id);
                                     if (!bounds) return null;
-                                    
+
                                     // Convert percentage to actual pixels relative to image
                                     const left = bounds.left + (currentRedaction.x / 100) * bounds.width;
                                     const top = bounds.top + (currentRedaction.y / 100) * bounds.height;
                                     const width = (currentRedaction.width / 100) * bounds.width;
                                     const height = (currentRedaction.height / 100) * bounds.height;
-                                    
+
                                     return (
                                         <div
                                             className="absolute pointer-events-none"
@@ -1007,20 +1155,7 @@ export default function RedactPDF() {
                                     );
                                 })()}
 
-                                {/* Instructions Overlay */}
-                                {redactions.length === 0 && !isDragging && (
-                                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                        <div className="bg-white/90 backdrop-blur-sm rounded-xl p-6 border-2 border-red-200 shadow-xl">
-                                            <Eraser className="text-red-600 mx-auto mb-3" size={32} />
-                                            <p className="text-sm font-black text-zinc-900 text-center mb-1">
-                                                Click and drag to create redaction boxes
-                                            </p>
-                                            <p className="text-xs font-semibold text-zinc-500 text-center">
-                                                Draw over sensitive information to permanently remove it
-                                            </p>
-                                        </div>
-                                    </div>
-                                )}
+
                             </div>
                         </div>
                     )}
