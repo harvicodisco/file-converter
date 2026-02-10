@@ -798,7 +798,7 @@ export default function RedactPDF() {
                 <div className="bg-red-50/50 rounded-xl p-3 border border-red-100">
                     <p className="text-xs font-black text-red-700 mb-1">⚠️ Warning</p>
                     <p className="text-xs font-semibold text-red-600 leading-relaxed">
-                        Redaction is permanent. Once applied, the underlying content cannot be recovered. Make sure you have a backup of the original file.
+                        Redaction is permanent. Once applied, the underlying content cannot be recovered. Make sure you have a  backup of the original file.
                     </p>
                 </div>
             </div>
