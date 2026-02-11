@@ -59,6 +59,7 @@ export default function Navbar() {
             tools: [
                 { name: "Image to PDF", href: "/image-to-pdf", icon: FileImage },
                 { name: "Office to PDF", href: "/office-to-pdf", icon: FileSpreadsheet },
+                { name: "PPT to PDF", href: "/ppt-to-pdf", icon: Presentation },
                 { name: "HTML to PDF", href: "/html-to-pdf", icon: FileSpreadsheet },
             ]
         }

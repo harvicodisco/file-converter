@@ -6,12 +6,14 @@ import ConversionLayout from "@/components/ConversionLayout";
 import ProcessingButton from "@/components/ProcessingButton";
 import DownloadResult from "@/components/DownloadResult";
 import PreviewContent from "@/components/PreviewContent";
+import pptxgen from "pptxgenjs";
 
 export default function PDFToPPT() {
     const [files, setFiles] = useState<File[]>([]);
     const [isProcessing, setIsProcessing] = useState(false);
     const [result, setResult] = useState<{ fileName: string; downloadUrl: string } | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [progress, setProgress] = useState(0);
 
     const handleFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
@@ -19,6 +21,7 @@ export default function PDFToPPT() {
             setFiles([file]);
             setResult(null);
             setPreviewUrl(URL.createObjectURL(file));
+            setProgress(0);
         }
     };
 
@@ -26,26 +29,89 @@ export default function PDFToPPT() {
         if (files.length === 0) return;
 
         setIsProcessing(true);
-        const formData = new FormData();
-        formData.append("file", files[0]);
+        setProgress(0);
 
         try {
-            const response = await fetch("/api/pdf-to-ppt", {
-                method: "POST",
-                body: formData,
+            const file = files[0];
+            const arrayBuffer = await file.arrayBuffer();
+
+            // Dynamically import pdfjs-dist to avoid SSR issues
+            const pdfjsLib = await import("pdfjs-dist");
+
+            if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+                pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+            }
+
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            const totalPages = pdf.numPages;
+
+            if (totalPages === 0) throw new Error("PDF has no pages");
+
+            // Get dimensions of the first page to set presentation layout
+            
+            const firstPage = await pdf.getPage(1);
+            const firstPageViewport = firstPage.getViewport({ scale: 1 });
+
+            // Convert points (PDF standard) to inches (PPTX standard)
+            // 1 inch = 72 points
+            const widthInches = firstPageViewport.width / 72;
+            const heightInches = firstPageViewport.height / 72;
+
+            const pptx = new pptxgen();
+            pptx.defineLayout({ name: 'CUSTOM', width: widthInches, height: heightInches });
+            pptx.layout = 'CUSTOM';
+
+            for (let i = 1; i <= totalPages; i++) {
+                const page = await pdf.getPage(i);
+                // Render at high resolution (scale 2 for better quality)
+                const scale = 2;
+                const viewport = page.getViewport({ scale });
+
+                const canvas = document.createElement("canvas");
+                const context = canvas.getContext("2d");
+
+                if (!context) throw new Error("Canvas context not available");
+
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                const renderContext = {
+                    canvasContext: context,
+                    viewport: viewport,
+                }; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+                await page.render(renderContext as any).promise;
+                const imgData = canvas.toDataURL("image/png");
+
+                // Add slide
+                const slide = pptx.addSlide();
+
+                // Add image to slide, filling it completely
+                slide.addImage({
+                    data: imgData,
+                    x: 0,
+                    y: 0,
+                    w: "100%",
+                    h: "100%",
+                });
+
+                setProgress(Math.round((i / totalPages) * 100));
+            }
+
+            const pptxBlob = await pptx.write({ outputType: "blob" }) as Blob;
+            const downloadUrl = URL.createObjectURL(pptxBlob);
+
+            setResult({
+                fileName: file.name.replace(/\.pdf$/i, ".pptx"),
+                downloadUrl
             });
 
-            if (response.ok) {
-                const data = await response.json();
-                setResult(data);
-            } else {
-                alert("Conversion failed");
-            }
         } catch (error) {
-            console.error(error);
-            alert("An error occurred");
+            console.error("Conversion error:", error);
+            alert("An error occurred during conversion.");
         } finally {
             setIsProcessing(false);
+            setProgress(0);
         }
     };
 
@@ -56,6 +122,7 @@ export default function PDFToPPT() {
             URL.revokeObjectURL(previewUrl);
             setPreviewUrl(null);
         }
+        setProgress(0);
     };
 
     const SettingsPanel = (
@@ -66,7 +133,7 @@ export default function PDFToPPT() {
                     {files.length > 0 && <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-100 uppercase tracking-tighter">Ready</span>}
                 </div>
                 <p className="text-xs font-bold text-zinc-500 leading-relaxed">
-                    Turn your PDF documents into editable PowerPoint slides while keeping the layout and images intact.
+                    Turn your PDF documents into high-quality PowerPoint slides while keeping the layout and images intact.
                 </p>
             </div>
 
@@ -79,7 +146,7 @@ export default function PDFToPPT() {
                     </li>
                     <li className="flex items-center gap-3 text-xs font-bold text-zinc-600">
                         <div className="w-1.5 h-1.5 rounded-full bg-orange-400" />
-                        <span>Editable text and shapes</span>
+                        <span>Exact visual match</span>
                     </li>
                     <li className="flex items-center gap-3 text-xs font-bold text-zinc-600">
                         <div className="w-1.5 h-1.5 rounded-full bg-orange-400" />
@@ -95,7 +162,7 @@ export default function PDFToPPT() {
                     disabled={files.length === 0}
                     icon={Presentation}
                     text="Convert to PowerPoint"
-                    processingText="Generating Slides..."
+                    processingText={`Generating Slides... ${progress > 0 ? `${progress}%` : ''}`}
                     bgColor="bg-orange-600"
                     className="shadow-orange-200"
                 />

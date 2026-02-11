@@ -26,6 +26,7 @@ const tools = [
   { name: "Image to PDF", href: "/image-to-pdf", icon: FileImage, description: "Convert images to high-quality PDF", color: "text-violet-600", bg: "bg-violet-50" },
   { name: "HTML to PDF", href: "/html-to-pdf", icon: Globe, description: "Save web pages as PDF files", color: "text-cyan-600", bg: "bg-cyan-50" },
   { name: "Office to PDF", href: "/office-to-pdf", icon: FileSpreadsheet, description: "Convert Office files to PDF", color: "text-rose-600", bg: "bg-rose-50" },
+  { name: "PPT to PDF", href: "/ppt-to-pdf", icon: Presentation, description: "Convert Powerpoint to PDF", color: "text-orange-600", bg: "bg-orange-50" },
   { name: "PDF to PDF/A", href: "/pdf-to-pdfa", icon: CheckCircle2, description: "Standard for long-term archiving", color: "text-slate-600", bg: "bg-slate-50" },
 ];
 
