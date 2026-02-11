@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { CheckCircle2, Plus, FileText } from "lucide-react";
+import { useState, useRef } from "react";
+import { CheckCircle2, Plus, FileText, X, Paperclip, ChevronDown } from "lucide-react";
 import ConversionLayout from "@/components/ConversionLayout";
 import ProcessingButton from "@/components/ProcessingButton";
 import DownloadResult from "@/components/DownloadResult";
@@ -15,6 +15,8 @@ export default function PDFToPDFA() {
     const [result, setResult] = useState<{ fileName: string; downloadUrl: string } | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [pdfaVersion, setPdfaVersion] = useState<PDFAVersion>("2b");
+    const [attachments, setAttachments] = useState<File[]>([]);
+    const attachmentInputRef = useRef<HTMLInputElement>(null);
 
     const handleFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
@@ -32,6 +34,13 @@ export default function PDFToPDFA() {
         const formData = new FormData();
         formData.append("file", files[0]);
         formData.append("pdfaVersion", pdfaVersion);
+        
+        // Add attachments if PDF/A-3 is selected
+        if (pdfaVersion.startsWith("3")) {
+            attachments.forEach((attachment) => {
+                formData.append("attachments", attachment);
+            });
+        }
 
         try {
             const response = await fetch("/api/pdf-to-pdfa", {
@@ -66,11 +75,29 @@ export default function PDFToPDFA() {
         }
         setFiles([]);
         setResult(null);
+        setAttachments([]);
         if (previewUrl) {
             URL.revokeObjectURL(previewUrl);
             setPreviewUrl(null);
         }
     };
+
+    const handleAttachmentsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files.length > 0) {
+            const newAttachments = Array.from(e.target.files);
+            setAttachments((prev) => [...prev, ...newAttachments]);
+            // Reset input so same files can be selected again
+            if (attachmentInputRef.current) {
+                attachmentInputRef.current.value = '';
+            }
+        }
+    };
+
+    const removeAttachment = (index: number) => {
+        setAttachments((prev) => prev.filter((_, i) => i !== index));
+    };
+
+    const isPDFA3 = pdfaVersion.startsWith("3");
 
     const SettingsPanel = (
         <div className="flex flex-col h-full">
@@ -86,9 +113,9 @@ export default function PDFToPDFA() {
 
             <div className="bg-white p-5 rounded-2xl border border-zinc-100 shadow-sm mb-6">
                 <h3 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3">PDF/A Conformance Level</h3>
-                <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
-                    {[
-                        // PDF/A-1 Series
+                
+                {(() => {
+                    const options = [
                         { 
                             value: "1b" as PDFAVersion, 
                             label: "PDF/A-1b", 
@@ -99,11 +126,10 @@ export default function PDFToPDFA() {
                         { 
                             value: "1a" as PDFAVersion, 
                             label: "PDF/A-1a", 
-                            desc: "Accessible - Full text structure tags",
+                            desc: "Accessible - Full text structure tags (Limited: accessibility tags not fully supported)",
                             group: "PDF/A-1",
                             recommended: false
                         },
-                        // PDF/A-2 Series
                         { 
                             value: "2b" as PDFAVersion, 
                             label: "PDF/A-2b", 
@@ -121,69 +147,147 @@ export default function PDFToPDFA() {
                         { 
                             value: "2a" as PDFAVersion, 
                             label: "PDF/A-2a", 
-                            desc: "Accessible - Full accessibility tags",
+                            desc: "Accessible - Full accessibility tags (Limited: accessibility tags not fully supported)",
                             group: "PDF/A-2",
                             recommended: false
                         },
-                        // PDF/A-3 Series
                         { 
                             value: "3b" as PDFAVersion, 
                             label: "PDF/A-3b", 
-                            desc: "Basic - Allows embedded files (XML, etc.)",
+                            desc: "Basic - Allows embedded files (Note: Existing attachments may be lost)",
                             group: "PDF/A-3",
                             recommended: false
                         },
                         { 
                             value: "3u" as PDFAVersion, 
                             label: "PDF/A-3u", 
-                            desc: "Unicode - Better text extraction + embedded files",
+                            desc: "Unicode - Better text extraction + embedded files (Note: Existing attachments may be lost)",
                             group: "PDF/A-3",
                             recommended: false
                         },
                         { 
                             value: "3a" as PDFAVersion, 
                             label: "PDF/A-3a", 
-                            desc: "Accessible - Full accessibility + embedded files",
+                            desc: "Accessible - Full accessibility + embedded files (Limited: accessibility tags not fully supported)",
                             group: "PDF/A-3",
                             recommended: false
                         },
-                    ].map((option, index, array) => {
-                        const showGroupHeader = index === 0 || array[index - 1].group !== option.group;
-                        return (
-                            <div key={option.value}>
-                                {showGroupHeader && (
-                                    <div className="text-[9px] font-black text-zinc-300 uppercase tracking-wider mb-2 mt-3 first:mt-0">
-                                        {option.group}
-                                    </div>
-                                )}
-                                <div
-                                    onClick={() => setPdfaVersion(option.value)}
-                                    className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${
-                                        pdfaVersion === option.value
-                                            ? 'border-slate-600 bg-slate-50 shadow-sm'
-                                            : 'border-zinc-100 bg-white hover:border-slate-200'
-                                    }`}
+                    ];
+                    
+                    const selectedOption = options.find(opt => opt.value === pdfaVersion) || options[0];
+                    
+                    return (
+                        <>
+                            <div className="relative">
+                                <select
+                                    value={pdfaVersion}
+                                    onChange={(e) => {
+                                        const newValue = e.target.value as PDFAVersion;
+                                        setPdfaVersion(newValue);
+                                        // Clear attachments if switching away from PDF/A-3
+                                        if (!newValue.startsWith("3")) {
+                                            setAttachments([]);
+                                        }
+                                    }}
+                                    className="w-full px-4 py-3 pr-10 bg-white border-2 border-zinc-200 rounded-xl text-sm font-bold text-zinc-700 cursor-pointer appearance-none hover:border-slate-300 focus:outline-none focus:border-slate-600 transition-colors"
                                 >
-                                    <div className="flex items-center justify-between mb-1">
-                                        <div className="flex items-center gap-2">
-                                            <span className={`text-sm font-bold ${pdfaVersion === option.value ? 'text-slate-700' : 'text-zinc-700'}`}>
-                                                {option.label}
-                                            </span>
-                                            {option.recommended && (
-                                                <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                                                    RECOMMENDED
-                                                </span>
-                                            )}
-                                        </div>
-                                        {pdfaVersion === option.value && <div className="w-2 h-2 rounded-full bg-slate-600 shadow-sm" />}
-                                    </div>
-                                    <p className="text-[10px] text-zinc-400 font-medium">{option.desc}</p>
-                                </div>
+                                    <optgroup label="PDF/A-1">
+                                        <option value="1b">PDF/A-1b - Basic</option>
+                                        <option value="1a">PDF/A-1a - Accessible (Limited)</option>
+                                    </optgroup>
+                                    <optgroup label="PDF/A-2">
+                                        <option value="2b">PDF/A-2b - Basic (Recommended)</option>
+                                        <option value="2u">PDF/A-2u - Unicode</option>
+                                        <option value="2a">PDF/A-2a - Accessible (Limited)</option>
+                                    </optgroup>
+                                    <optgroup label="PDF/A-3">
+                                        <option value="3b">PDF/A-3b - Basic + Attachments</option>
+                                        <option value="3u">PDF/A-3u - Unicode + Attachments</option>
+                                        <option value="3a">PDF/A-3a - Accessible + Attachments (Limited)</option>
+                                    </optgroup>
+                                </select>
+                                <ChevronDown size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
                             </div>
-                        );
-                    })}
-                </div>
+                            
+                            <div className="mt-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-xs font-bold text-zinc-700">{selectedOption.label}</span>
+                                    {selectedOption.recommended && (
+                                        <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                            RECOMMENDED
+                                        </span>
+                                    )}
+                                    {selectedOption.value.endsWith('a') && (
+                                        <span className="text-[9px] font-black text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                            LIMITED
+                                        </span>
+                                    )}
+                                </div>
+                                <p className="text-[10px] text-zinc-500 font-medium">{selectedOption.desc}</p>
+                            </div>
+                        </>
+                    );
+                })()}
             </div>
+
+            {/* Attachments section - only for PDF/A-3 */}
+            {isPDFA3 && (
+                <div className="bg-white p-5 rounded-2xl border border-zinc-100 shadow-sm mb-6">
+                    <h3 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3">Embedded Files (PDF/A-3)</h3>
+                    <p className="text-xs font-semibold text-zinc-500 mb-3">
+                        Add files to embed in the PDF/A-3 document (images, CSV, XML, Office docs, etc.)
+                    </p>
+                    <div className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                        <p className="text-[10px] font-black text-amber-700 mb-1">⚠️ Important:</p>
+                        <p className="text-[10px] font-semibold text-amber-600">
+                            If converting a PDF that already has attachments, those attachments will be lost. You must re-add all attachments (existing + new) in this conversion.
+                        </p>
+                    </div>
+                    
+                    {attachments.length > 0 && (
+                        <div className="space-y-2 mb-3 max-h-[120px] overflow-y-auto">
+                            {attachments.map((attachment, index) => (
+                                <div
+                                    key={index}
+                                    className="flex items-center justify-between p-2 bg-slate-50 rounded-lg border border-slate-200"
+                                >
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                        <Paperclip size={12} className="text-slate-500 flex-shrink-0" />
+                                        <span className="text-xs font-bold text-zinc-700 truncate" title={attachment.name}>
+                                            {attachment.name}
+                                        </span>
+                                        <span className="text-[10px] text-zinc-400">
+                                            ({(attachment.size / 1024).toFixed(1)} KB)
+                                        </span>
+                                    </div>
+                                    <button
+                                        onClick={() => removeAttachment(index)}
+                                        className="text-red-500 hover:text-red-600 transition-colors flex-shrink-0 ml-2"
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    
+                    <label className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer transition-all active:scale-95">
+                        <Plus size={14} />
+                        <span>Add Files</span>
+                        <input
+                            ref={attachmentInputRef}
+                            type="file"
+                            multiple
+                            onChange={handleAttachmentsChange}
+                            className="hidden"
+                            accept="*/*"
+                        />
+                    </label>
+                    <p className="text-[10px] text-zinc-400 mt-2">
+                        Supports all file types: images, CSV, XML, Office docs, etc. Existing attachments in source PDF will be lost.
+                    </p>
+                </div>
+            )}
 
             <div className="bg-white p-5 rounded-2xl border border-zinc-100 shadow-sm mb-8">
                 <h3 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3">Why PDF/A?</h3>
@@ -230,7 +334,8 @@ export default function PDFToPDFA() {
                         onReset={handleReset}
                         stats={[
                             { label: "Standard", value: `PDF/A-${pdfaVersion}` },
-                            { label: "Original", value: files[0]?.name || "" }
+                            { label: "Original", value: files[0]?.name || "" },
+                            ...(isPDFA3 && attachments.length > 0 ? [{ label: "Attachments", value: attachments.length.toString() }] : [])
                         ]}
                     />
                 </div>

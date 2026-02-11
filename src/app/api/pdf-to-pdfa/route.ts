@@ -45,9 +45,27 @@ export async function POST(req: NextRequest) {
             // Version-specific settings
             const versionNumber = pdfaVersion.charAt(0);
             const isPDFA1 = versionNumber === "1";
+            const isPDFA3 = versionNumber === "3";
+            
+            // PDF/A-3: Add new attachments (existing attachments are lost due to pdf-lib limitation)
+            if (isPDFA3) {
+                const attachmentFiles = formData.getAll("attachments") as File[];
+                if (attachmentFiles && attachmentFiles.length > 0) {
+                    for (const attachmentFile of attachmentFiles) {
+                        try {
+                            const attachmentData = await attachmentFile.arrayBuffer();
+                            await pdfDoc.attach(attachmentData, attachmentFile.name, {
+                                mimeType: attachmentFile.type || 'application/octet-stream',
+                            });
+                            console.log(`✅ Added attachment: ${attachmentFile.name}`);
+                        } catch (attachError) {
+                            console.warn(`❌ Failed to attach ${attachmentFile.name}:`, attachError);
+                        }
+                    }
+                }
+            }
             
             // PDF/A-1 and PDF/A-2: Attachments not allowed (automatically removed when copying pages)
-            // PDF/A-3: Attachments allowed and preserved
             
             // Save with version-specific options
             const pdfBytes = await pdfDoc.save({
