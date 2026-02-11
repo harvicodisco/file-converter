@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Upload, FileText, CheckCircle2, Loader2, ArrowRight,
   Merge, Scissors, Minimize2, Sheet, Presentation,
-  Image as ImageIcon, FileImage, FileSpreadsheet, Zap, Settings, Globe, Crop, Scan, Hash, Wrench, Eraser, GitCompare
+  Image as ImageIcon, FileImage, FileSpreadsheet, Zap, Settings, Globe, Crop, Scan, Hash, Wrench, Eraser,   GitCompare, Lock, RotateCw, Droplet, PenTool
 } from "lucide-react";
 import Link from "next/link";
 
@@ -20,6 +20,10 @@ const tools = [
   { name: "Repair PDF", href: "/repair-pdf", icon: Wrench, description: "Fix corrupted or damaged PDF files", color: "text-amber-600", bg: "bg-amber-50" },
   { name: "Redact PDF", href: "/redact-pdf", icon: Eraser, description: "Permanently remove sensitive information", color: "text-red-600", bg: "bg-red-50" },
   { name: "Compare PDF", href: "/compare-pdf", icon: GitCompare, description: "Compare two PDFs to find differences", color: "text-indigo-600", bg: "bg-indigo-50" },
+  { name: "Unlock PDF", href: "/unlock-pdf", icon: Lock, description: "Remove PDF password security", color: "text-slate-600", bg: "bg-slate-50" },
+  { name: "Rotate PDF", href: "/rotate-pdf", icon: RotateCw, description: "Rotate pages clockwise or counterclockwise", color: "text-blue-600", bg: "bg-blue-50" },
+  { name: "Watermark PDF", href: "/watermark-pdf", icon: Droplet, description: "Add text or image watermarks to PDFs", color: "text-indigo-600", bg: "bg-indigo-50" },
+  { name: "Sign PDF", href: "/sign-pdf", icon: PenTool, description: "Add your signature to PDF documents", color: "text-purple-600", bg: "bg-purple-50" },
   { name: "PDF to Word", href: "/pdf-to-word", icon: FileText, description: "Convert documents to editable Word", color: "text-blue-500", bg: "bg-blue-50/50" },
   { name: "PDF to Excel", href: "/pdf-to-excel", icon: Sheet, description: "Turn PDFs into editable spreadsheets", color: "text-emerald-600", bg: "bg-emerald-50" },
   { name: "PDF to PPT", href: "/pdf-to-ppt", icon: Presentation, description: "Create PowerPoint slides from PDF", color: "text-orange-600", bg: "bg-orange-50" },
