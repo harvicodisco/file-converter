@@ -506,199 +506,263 @@ export default function ComparePDF() {
             title="Compare PDF"
             description="Compare two PDFs to find differences"
             settingsPanel={ChangeReportPanel || (
-                <div className="flex flex-col h-full items-center justify-center text-center p-4">
-                    {file1 && file2 ? (
-                        <div className="w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
-                            <div className="flex flex-col items-center justify-center mb-8">
-                                <div className="p-4 bg-blue-50 rounded-full mb-4">
-                                    <GitCompare className="text-blue-600" size={32} />
-                                </div>
-                                <h3 className="text-lg font-bold text-zinc-900 mb-2">Ready to Compare</h3>
-                                <p className="text-xs font-medium text-zinc-500 max-w-[200px]">
-                                    Both documents are uploaded. Click below to start.
-                                </p>
+                <div className="flex flex-col h-full">
+                    <div className="p-8 flex flex-col items-center justify-center text-center space-y-6">
+                        <div className="relative">
+                            <motion.div
+                                animate={{ rotate: 360 }}
+                                transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+                                className="absolute -inset-4 bg-gradient-to-tr from-blue-500/20 to-indigo-500/20 rounded-full blur-2xl"
+                            />
+                            <div className="relative p-6 bg-white rounded-2xl shadow-xl shadow-blue-100/50 border border-blue-50">
+                                <GitCompare className="text-blue-600" size={40} />
                             </div>
+                        </div>
 
-                            <button
+                        <div>
+                            <h3 className="text-xl font-black text-zinc-900 mb-2">PDF Comparison</h3>
+                            <p className="text-sm font-medium text-zinc-500 max-w-[200px] mx-auto leading-relaxed">
+                                Upload two versions of a document to highlight changes automatically.
+                            </p>
+                        </div>
+
+                        {file1 && file2 && (
+                            <motion.button
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
                                 onClick={handleCompare}
                                 disabled={isProcessing}
-                                className="w-full px-4 py-4 bg-blue-600 text-white text-sm font-black rounded-xl hover:bg-blue-700 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-3 shadow-blue-200"
+                                className="w-full px-6 py-4 bg-zinc-900 text-white text-sm font-black rounded-xl hover:bg-black hover:shadow-2xl hover:shadow-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-3"
                             >
                                 {isProcessing ? (
                                     <>
-                                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                        <span>Comparing...</span>
+                                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                        <span>Analyzing Docs...</span>
                                     </>
                                 ) : (
                                     <>
                                         <GitCompare size={20} />
-                                        <span>Compare PDFs</span>
+                                        <span>Start Comparison</span>
                                     </>
                                 )}
-                            </button>
+                            </motion.button>
+                        )}
+                    </div>
+
+                    {!file1 || !file2 ? (
+                        <div className="flex-1 px-8 pb-8 flex flex-col gap-4 overflow-y-auto">
+                            <div className="p-4 bg-blue-50/50 border border-blue-100 rounded-xl">
+                                <p className="text-[10px] font-black uppercase tracking-wider text-blue-600 mb-2">Instructions</p>
+                                <ul className="space-y-2">
+                                    <li className="flex items-center gap-2 text-xs font-bold text-zinc-600">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                                        Upload original PDF on left
+                                    </li>
+                                    <li className="flex items-center gap-2 text-xs font-bold text-zinc-600">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                                        Upload modified PDF on right
+                                    </li>
+                                    <li className="flex items-center gap-2 text-xs font-bold text-zinc-600">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                                        Click "Start Comparison"
+                                    </li>
+                                </ul>
+                            </div>
                         </div>
                     ) : (
-                        <>
-                            <GitCompare className="text-zinc-300 mb-4" size={48} />
-                            <p className="text-sm font-semibold text-zinc-400">
-                                Upload two PDFs to see the change report
-                            </p>
-                        </>
+                        <div className="mt-auto p-8 pt-0">
+                            <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl flex items-center gap-3">
+                                <div className="p-2 bg-emerald-500 rounded-lg text-white">
+                                    <CheckCircle2 size={16} />
+                                </div>
+                                <div className="text-left">
+                                    <p className="text-[10px] font-black uppercase text-emerald-600">Ready</p>
+                                    <p className="text-xs font-bold text-emerald-900 leading-none">Files matched</p>
+                                </div>
+                            </div>
+                        </div>
                     )}
                 </div>
             )}
         >
             {result && result.pages.length > 0 ? (
-                <div className="w-full h-full flex flex-col">
-                    {/* Comparison View - All Pages Scrollable */}
-                    <div className="flex-1 overflow-hidden bg-zinc-50 rounded-xl border border-zinc-200">
+                <div className="w-full h-full flex flex-col bg-zinc-50 rounded-xl border border-zinc-200 overflow-hidden shadow-inner">
+                    {/* Top Toolbar */}
+                    {/* <div className="px-6 py-4 bg-white border-b border-zinc-200 flex items-center justify-between">
+                        <div className="flex items-center gap-6">
+                            <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                                <span className="text-xs font-black text-zinc-900 uppercase tracking-widest">Comparison Mode</span>
+                            </div>
+                            <div className="h-4 w-px bg-zinc-200" />
+                            <div className="flex gap-1 p-1 bg-zinc-100 rounded-lg">
+                                <button
+                                    onClick={() => setComparisonMode('semantic')}
+                                    className={`px-3 py-1.5 text-[10px] font-black uppercase rounded-md transition-all ${comparisonMode === 'semantic' ? 'bg-white text-blue-600 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
+                                >
+                                    Side-by-Side
+                                </button>
+                                <button
+                                    onClick={() => setComparisonMode('overlay')}
+                                    className={`px-3 py-1.5 text-[10px] font-black uppercase rounded-md transition-all ${comparisonMode === 'overlay' ? 'bg-white text-blue-600 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
+                                >
+                                    Overlay
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-50 rounded-lg border border-zinc-100">
+                                <span className="text-[10px] font-black text-zinc-400 uppercase">Status:</span>
+                                <span className="text-[10px] font-black text-emerald-600 uppercase italic">Analysis Complete</span>
+                            </div>
+                        </div>
+                    </div> */}
+
+                    <div className="flex-1 overflow-hidden">
                         {comparisonMode === 'semantic' ? (
-                            <div className="flex h-full">
-                                {/* Original PDF - Left Side - All Pages */}
-                                <div className="flex-1 bg-white flex flex-col h-full border-r border-red-300">
-                                    <div className="px-4 py-3 flex items-center justify-between flex-shrink-0 border-b border-zinc-200 bg-zinc-50">
-                                        <h3 className="text-xs font-black text-zinc-400 uppercase">Original</h3>
-                                    </div>
-                                    <div
-                                        ref={leftScrollRef}
-                                        onScroll={handleLeftScroll}
-                                        className="flex-1 overflow-auto bg-white"
-                                        style={{ minHeight: 0 }}
-                                    >
-                                        <div className="space-y-4 p-4">
-                                            {result.pages.map((page) => (
-                                                <div key={`original-${page.pageNumber}`} className="flex flex-col items-center">
-                                                    <div className="mb-2 text-center">
-                                                        <span className="text-xs font-semibold text-zinc-500">Page {page.pageNumber}</span>
-                                                    </div>
-                                                    <div className="relative">
-                                                        <img
-                                                            src={page.originalImage}
-                                                            alt={`Original page ${page.pageNumber}`}
-                                                            className="block border border-zinc-200 rounded shadow-sm bg-white"
-                                                            style={{
-                                                                width: 'auto',
-                                                                height: 'auto',
-                                                                maxWidth: '100%',
-                                                                minWidth: '500px'
-                                                            }}
-                                                        />
-                                                        {page.differences
-                                                            .filter(d => d.type === 'deleted')
-                                                            .map((diff, idx) => (
-                                                                <div
-                                                                    key={`deleted-${page.pageNumber}-${idx}`}
-                                                                    className="absolute border border-rose-400 bg-rose-400/20 rounded-sm pointer-events-none transition-all duration-300"
-                                                                    style={{
-                                                                        left: `${diff.x}%`,
-                                                                        top: `${diff.y}%`,
-                                                                        width: `${diff.width}%`,
-                                                                        height: `${diff.height}%`,
-                                                                    }}
-                                                                />
-                                                            ))}
-                                                    </div>
-                                                </div>
-                                            ))}
+                            <div className="flex flex-col h-full">
+                                {/* Headers - Fixed at top */}
+                                <div className="flex border-b border-zinc-200 bg-zinc-50/95 backdrop-blur z-10">
+                                    <div className="flex-1 px-6 py-3 flex items-center justify-between border-r border-zinc-200">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-2 h-2 rounded-full bg-rose-500 shadow-sm shadow-rose-200" />
+                                            <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Original Document</span>
                                         </div>
+                                        <span className="px-2 py-0.5 bg-white border border-rose-100 text-[9px] font-black rounded text-zinc-400">REF: BASELINE</span>
+                                    </div>
+                                    <div className="flex-1 px-6 py-3 flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-sm shadow-emerald-200" />
+                                            <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Modified Document</span>
+                                        </div>
+                                        <span className="px-2 py-0.5 bg-white border border-emerald-100 text-[9px] font-black rounded text-zinc-400">REF: REVISED</span>
                                     </div>
                                 </div>
 
-                                {/* Modified PDF - Right Side - All Pages */}
-                                <div className="flex-1 bg-white flex flex-col h-full">
-                                    <div className="px-4 py-3 flex items-center justify-between flex-shrink-0 border-b border-zinc-200 bg-zinc-50">
-                                        <h3 className="text-xs font-black text-zinc-400 uppercase">Modified</h3>
-                                    </div>
-                                    <div
-                                        ref={rightScrollRef}
-                                        onScroll={handleRightScroll}
-                                        className="flex-1 overflow-auto bg-white"
-                                        style={{ minHeight: 0 }}
-                                    >
-                                        <div className="space-y-4 p-4">
-                                            {result.pages.map((page) => (
-                                                <div key={`modified-${page.pageNumber}`} className="flex flex-col items-center">
-                                                    <div className="mb-2 text-center">
-                                                        <span className="text-xs font-semibold text-zinc-500">Page {page.pageNumber}</span>
+                                {/* Single Scroll Container for Synchronized View */}
+                                <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-300 scrollbar-track-transparent">
+                                    <div className="flex flex-col items-center py-12 space-y-16">
+                                        {result.pages.map((page) => (
+                                            <div key={`pair-${page.pageNumber}`} className="w-full max-w-[95%] xl:max-w-7xl flex gap-16 px-8">
+                                                {/* Left Page (Original) */}
+                                                <div className="flex-1 flex flex-col items-center">
+                                                    <div className="w-full flex items-center gap-4 mb-4 opacity-50">
+                                                        <div className="h-px flex-1 bg-zinc-300" />
+                                                        <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Page {page.pageNumber}</span>
+                                                        <div className="h-px flex-1 bg-zinc-300" />
                                                     </div>
-                                                    <div className="relative">
-                                                        <img
-                                                            src={page.modifiedImage}
-                                                            alt={`Modified page ${page.pageNumber}`}
-                                                            className="block border border-zinc-200 rounded shadow-sm bg-white"
-                                                            style={{
-                                                                width: 'auto',
-                                                                height: 'auto',
-                                                                maxWidth: '100%',
-                                                                minWidth: '500px'
-                                                            }}
-                                                        />
-                                                        {page.differences
-                                                            .filter(d => d.type === 'added' || d.type === 'modified')
-                                                            .map((diff, idx) => (
-                                                                <div
-                                                                    key={`added-${page.pageNumber}-${idx}`}
-                                                                    className={`absolute border rounded-sm pointer-events-none transition-all duration-300 ${diff.type === 'added'
-                                                                        ? 'border-emerald-400 bg-emerald-400/20'
-                                                                        : 'border-amber-400 bg-amber-400/20'
-                                                                        }`}
-                                                                    style={{
-                                                                        left: `${diff.x}%`,
-                                                                        top: `${diff.y}%`,
-                                                                        width: `${diff.width}%`,
-                                                                        height: `${diff.height}%`,
-                                                                    }}
-                                                                />
-                                                            ))}
+                                                    <div className="relative group transition-all duration-500 w-full">
+                                                        <div className="absolute -inset-2 bg-gradient-to-tr from-rose-500/10 to-transparent rounded-[20px] blur opacity-0 group-hover:opacity-100 transition-opacity" />
+                                                        <div className="relative">
+                                                            <img
+                                                                src={page.originalImage}
+                                                                alt={`Original page ${page.pageNumber}`}
+                                                                className="block border border-zinc-200 rounded-lg shadow-xl shadow-zinc-200/50 bg-white w-full h-auto"
+                                                            />
+                                                            {page.differences
+                                                                .filter(d => d.type === 'deleted')
+                                                                .map((diff, idx) => (
+                                                                    <div
+                                                                        key={`deleted-${page.pageNumber}-${idx}`}
+                                                                        className="absolute border border-rose-500 bg-rose-500/20 rounded-sm pointer-events-none transition-all duration-300 ring-1 ring-rose-500/10 mix-blend-multiply"
+                                                                        style={{
+                                                                            left: `${diff.x}%`,
+                                                                            top: `${diff.y}%`,
+                                                                            width: `${diff.width}%`,
+                                                                            height: `${diff.height}%`,
+                                                                        }}
+                                                                    />
+                                                                ))}
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            ))}
-                                        </div>
+
+                                                {/* Right Page (Modified) */}
+                                                <div className="flex-1 flex flex-col items-center">
+                                                    <div className="w-full flex items-center gap-4 mb-4 opacity-50">
+                                                        <div className="h-px flex-1 bg-zinc-300" />
+                                                        <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Page {page.pageNumber}</span>
+                                                        <div className="h-px flex-1 bg-zinc-300" />
+                                                    </div>
+                                                    <div className="relative group transition-all duration-500 w-full">
+                                                        <div className="absolute -inset-2 bg-gradient-to-tr from-emerald-500/10 to-transparent rounded-[20px] blur opacity-0 group-hover:opacity-100 transition-opacity" />
+                                                        <div className="relative">
+                                                            <img
+                                                                src={page.modifiedImage}
+                                                                alt={`Modified page ${page.pageNumber}`}
+                                                                className="block border border-zinc-200 rounded-lg shadow-xl shadow-zinc-200/50 bg-white w-full h-auto"
+                                                            />
+                                                            {page.differences
+                                                                .filter(d => d.type === 'added' || d.type === 'modified')
+                                                                .map((diff, idx) => (
+                                                                    <div
+                                                                        key={`added-${page.pageNumber}-${idx}`}
+                                                                        className={`absolute border rounded-sm pointer-events-none transition-all duration-300 ring-1 mix-blend-multiply ${diff.type === 'added'
+                                                                            ? 'border-emerald-500 bg-emerald-500/20 ring-emerald-500/10'
+                                                                            : 'border-amber-500 bg-amber-500/20 ring-amber-500/10'
+                                                                            }`}
+                                                                        style={{
+                                                                            left: `${diff.x}%`,
+                                                                            top: `${diff.y}%`,
+                                                                            width: `${diff.width}%`,
+                                                                            height: `${diff.height}%`,
+                                                                        }}
+                                                                    />
+                                                                ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
                             </div>
                         ) : (
                             <div className="flex-1 bg-white flex flex-col h-full">
-                                <div className="px-4 py-3 flex items-center justify-between flex-shrink-0 border-b border-zinc-200 bg-zinc-50">
-                                    <h3 className="text-xs font-black text-zinc-400 uppercase">Content Overlay</h3>
+                                <div className="px-6 py-2 flex items-center justify-between bg-zinc-50/50 border-b border-zinc-200">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-2 h-2 rounded-full bg-blue-500" />
+                                        <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Content Overlay View</span>
+                                    </div>
+                                    <span className="px-2 py-0.5 bg-blue-100 text-[9px] font-black rounded text-blue-600 tracking-wider">COMPOSITE</span>
                                 </div>
-                                <div className="flex-1 overflow-auto bg-white" style={{ minHeight: 0 }}>
-                                    <div className="space-y-4 p-4">
+                                <div className="flex-1 overflow-auto bg-zinc-100/50" style={{ minHeight: 0 }}>
+                                    <div className="space-y-12 p-12 flex flex-col items-center">
                                         {result.pages.map((page) => (
-                                            <div key={`overlay-${page.pageNumber}`} className="flex flex-col items-center">
-                                                <div className="mb-2 text-center">
-                                                    <span className="text-xs font-semibold text-zinc-500">Page {page.pageNumber}</span>
+                                            <div key={`overlay-${page.pageNumber}`} className="flex flex-col items-center w-full max-w-3xl">
+                                                <div className="w-full flex items-center gap-4 mb-6">
+                                                    <div className="h-px flex-1 bg-zinc-200" />
+                                                    <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Composite Page {page.pageNumber}</span>
+                                                    <div className="h-px flex-1 bg-zinc-200" />
                                                 </div>
-                                                <div className="relative">
-                                                    <img
-                                                        src={page.modifiedImage}
-                                                        alt={`Page ${page.pageNumber}`}
-                                                        className="block border border-zinc-200 rounded shadow-sm bg-white"
-                                                        style={{
-                                                            width: 'auto',
-                                                            height: 'auto',
-                                                            maxWidth: '100%',
-                                                            minWidth: '500px'
-                                                        }}
-                                                    />
-                                                    {page.differences.map((diff, idx) => (
-                                                        <div
-                                                            key={`diff-${page.pageNumber}-${idx}`}
-                                                            className={`absolute mix-blend-multiply transition-all duration-300 ${diff.type === 'added'
-                                                                ? 'bg-emerald-300/40'
-                                                                : diff.type === 'deleted'
-                                                                    ? 'bg-rose-300/40'
-                                                                    : 'bg-amber-300/40'
-                                                                }`}
-                                                            style={{
-                                                                left: `${diff.x}%`,
-                                                                top: `${diff.y}%`,
-                                                                width: `${diff.width}%`,
-                                                                height: `${diff.height}%`,
-                                                            }}
-                                                            title={diff.text || diff.type}
+                                                <div className="relative group p-4">
+                                                    <div className="absolute inset-0 bg-white rounded-2xl shadow-2xl transition-all duration-500 group-hover:scale-[1.01]" />
+                                                    <div className="relative">
+                                                        <img
+                                                            src={page.modifiedImage}
+                                                            alt={`Page ${page.pageNumber}`}
+                                                            className="block border border-zinc-100 rounded-lg bg-white w-full h-auto"
                                                         />
-                                                    ))}
+                                                        {page.differences.map((diff, idx) => (
+                                                            <div
+                                                                key={`diff-${page.pageNumber}-${idx}`}
+                                                                className={`absolute mix-blend-multiply transition-all duration-300 ${diff.type === 'added'
+                                                                    ? 'bg-emerald-300/40'
+                                                                    : diff.type === 'deleted'
+                                                                        ? 'bg-rose-300/40'
+                                                                        : 'bg-amber-300/40'
+                                                                    }`}
+                                                                style={{
+                                                                    left: `${diff.x}%`,
+                                                                    top: `${diff.y}%`,
+                                                                    width: `${diff.width}%`,
+                                                                    height: `${diff.height}%`,
+                                                                }}
+                                                                title={diff.text || diff.type}
+                                                            />
+                                                        ))}
+                                                    </div>
                                                 </div>
                                             </div>
                                         ))}
@@ -709,111 +773,170 @@ export default function ComparePDF() {
                     </div>
                 </div>
             ) : (
-                <div className="w-full h-full flex items-center justify-center">
-                    <div className="w-full max-w-6xl">
-                        {/* Side-by-Side File Upload */}
-                        <div className="flex gap-4 h-[500px]">
-                            {/* Left Panel */}
-                            <div className="flex-1 flex flex-col">
-                                <div
-                                    onDragOver={(e) => handleDragOver(e, 1)}
-                                    onDragLeave={() => handleDragLeave(1)}
-                                    onDrop={(e) => handleDrop(e, 1)}
-                                    className={`flex-1 border-2 border-dashed rounded-lg bg-white flex flex-col items-center justify-center cursor-pointer transition-colors ${dragOver1 ? 'border-blue-500 bg-blue-50' : 'border-zinc-300 hover:border-blue-400'
-                                        }`}
-                                    onClick={() => file1InputRef.current?.click()}
+                <div className="w-full h-full overflow-y-auto p-8 bg-zinc-50/30 scrollbar-thin scrollbar-thumb-zinc-300 scrollbar-track-transparent">
+                    <div className="flex flex-col items-center justify-center min-h-full w-full">
+                        <div className="w-full max-w-5xl space-y-8">
+                            {/* Summary Headers */}
+                            {/* <div className="flex flex-col items-center text-center space-y-4 mb-4">
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.9 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    className="px-4 py-1 bg-blue-100 text-blue-600 rounded-full text-[10px] font-black uppercase tracking-widest"
                                 >
-                                    {file1 ? (
-                                        <div className="flex flex-col items-center gap-3 p-6">
-                                            <FileText className="text-blue-600" size={32} />
-                                            <div className="text-center">
-                                                <p className="text-sm font-bold text-zinc-700">{file1.name}</p>
-                                                <p className="text-xs font-semibold text-zinc-500 mt-1">
-                                                    {(file1.size / 1024 / 1024).toFixed(2)} MB
-                                                </p>
-                                            </div>
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setFile1(null);
-                                                }}
-                                                className="text-zinc-400 hover:text-red-600 transition-colors"
-                                            >
-                                                <X size={20} />
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <div className="flex flex-col items-center gap-3">
-                                            <p className="text-base font-semibold text-zinc-600">Drag and drop</p>
-                                            <p className="text-sm font-semibold text-zinc-500">Or</p>
-                                            <button className="px-6 py-2 border-2 border-red-500 text-red-600 rounded-lg font-bold hover:bg-red-50 transition-colors">
-                                                Select file
-                                            </button>
-                                        </div>
-                                    )}
-                                    <input
-                                        ref={file1InputRef}
-                                        type="file"
-                                        accept=".pdf"
-                                        onChange={handleFile1Change}
-                                        className="hidden"
-                                    />
-                                </div>
-                            </div>
+                                    Document Intelligence
+                                </motion.div>
+                                <h2 className="text-4xl font-black text-zinc-900 tracking-tight">Compare Documents</h2>
+                                <p className="text-zinc-500 font-medium max-w-lg mx-auto">
+                                    Securely compare two PDFs to detect text additions, deletions, and visual changes with pixel-perfect precision.
+                                </p>
+                            </div> */}
 
-                            {/* Divider */}
-                            <div className="w-px bg-blue-300 my-8" />
-
-                            {/* Right Panel */}
-                            <div className="flex-1 flex flex-col">
-                                <div
-                                    onDragOver={(e) => handleDragOver(e, 2)}
-                                    onDragLeave={() => handleDragLeave(2)}
-                                    onDrop={(e) => handleDrop(e, 2)}
-                                    className={`flex-1 border-2 border-dashed rounded-lg bg-white flex flex-col items-center justify-center cursor-pointer transition-colors ${dragOver2 ? 'border-blue-500 bg-blue-50' : 'border-zinc-300 hover:border-blue-400'
-                                        }`}
-                                    onClick={() => file2InputRef.current?.click()}
+                            {/* Side-by-Side File Upload */}
+                            <div className="flex gap-6 h-[480px]">
+                                {/* Left Panel - Original */}
+                                <motion.div
+                                    initial={{ opacity: 0, x: -20 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    className="flex-1 flex flex-col group"
                                 >
-                                    {file2 ? (
-                                        <div className="flex flex-col items-center gap-3 p-6">
-                                            <FileText className="text-blue-600" size={32} />
-                                            <div className="text-center">
-                                                <p className="text-sm font-bold text-zinc-700">{file2.name}</p>
-                                                <p className="text-xs font-semibold text-zinc-500 mt-1">
-                                                    {(file2.size / 1024 / 1024).toFixed(2)} MB
-                                                </p>
+                                    <div className="mb-3 flex items-center justify-between px-2">
+                                        <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Document A</span>
+                                        <span className="text-[10px] font-bold text-rose-500 uppercase tracking-wider bg-rose-50 px-2 py-0.5 rounded">Original</span>
+                                    </div>
+                                    <div
+                                        onDragOver={(e) => handleDragOver(e, 1)}
+                                        onDragLeave={() => handleDragLeave(1)}
+                                        onDrop={(e) => handleDrop(e, 1)}
+                                        className={`flex-1 relative overflow-hidden rounded-3xl border-2 transition-all duration-500 flex flex-col ${dragOver1
+                                            ? 'border-blue-500 bg-blue-50/50 shadow-2xl shadow-blue-100'
+                                            : 'border-zinc-200 bg-white hover:border-zinc-300 hover:shadow-xl hover:shadow-zinc-200/50'
+                                            } ${file1 ? 'border-zinc-900 border-opacity-10' : 'border-dashed'}`}
+                                    >
+                                        {file1 ? (
+                                            <div className="h-full flex flex-col p-8 items-center justify-center gap-6">
+                                                <div className="p-5 bg-rose-50 rounded-2xl relative">
+                                                    <FileText className="text-rose-500" size={48} />
+                                                    <div className="absolute -top-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full border-4 border-white flex items-center justify-center">
+                                                        <CheckCircle2 size={10} className="text-white" />
+                                                    </div>
+                                                </div>
+                                                <div className="text-center space-y-1">
+                                                    <p className="text-sm font-black text-zinc-900 truncate max-w-[200px]">{file1.name}</p>
+                                                    <p className="text-[10px] font-black text-zinc-400 uppercase">
+                                                        {(file1.size / 1024 / 1024).toFixed(2)} MB • READY
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setFile1(null);
+                                                    }}
+                                                    className="px-4 py-2 bg-zinc-100 text-zinc-500 text-[10px] font-bold rounded-lg hover:bg-rose-500 hover:text-white transition-all flex items-center gap-2"
+                                                >
+                                                    <X size={14} />
+                                                    Change File
+                                                </button>
                                             </div>
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setFile2(null);
-                                                }}
-                                                className="text-zinc-400 hover:text-red-600 transition-colors"
+                                        ) : (
+                                            <div
+                                                className="h-full flex flex-col items-center justify-center p-8 cursor-pointer"
+                                                onClick={() => file1InputRef.current?.click()}
                                             >
-                                                <X size={20} />
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <div className="flex flex-col items-center gap-3">
-                                            <p className="text-base font-semibold text-zinc-600">Drag and drop</p>
-                                            <p className="text-sm font-semibold text-zinc-500">Or</p>
-                                            <button className="px-6 py-2 border-2 border-red-500 text-red-600 rounded-lg font-bold hover:bg-red-50 transition-colors">
-                                                Select file
-                                            </button>
-                                        </div>
-                                    )}
-                                    <input
-                                        ref={file2InputRef}
-                                        type="file"
-                                        accept=".pdf"
-                                        onChange={handleFile2Change}
-                                        className="hidden"
-                                    />
+                                                <div className="p-6 bg-zinc-50 rounded-3xl mb-6 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-500">
+                                                    <Plus className="text-zinc-400" size={32} />
+                                                </div>
+                                                <div className="text-center space-y-2">
+                                                    <p className="text-base font-black text-zinc-900">Import Original</p>
+                                                    <p className="text-xs font-semibold text-zinc-400">Click or drag PDF document here</p>
+                                                </div>
+                                            </div>
+                                        )}
+                                        <input
+                                            ref={file1InputRef}
+                                            type="file"
+                                            accept=".pdf"
+                                            onChange={handleFile1Change}
+                                            className="hidden"
+                                        />
+                                    </div>
+                                </motion.div>
+
+                                {/* Divider with Center Icon */}
+                                <div className="flex flex-col items-center justify-center px-2">
+                                    <div className="p-3 bg-zinc-900 rounded-full text-white shadow-xl">
+                                        <GitCompare size={20} />
+                                    </div>
                                 </div>
+
+                                {/* Right Panel - Modified */}
+                                <motion.div
+                                    initial={{ opacity: 0, x: 20 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    className="flex-1 flex flex-col group"
+                                >
+                                    <div className="mb-3 flex items-center justify-between px-2">
+                                        <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Document B</span>
+                                        <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider bg-emerald-50 px-2 py-0.5 rounded">Revised</span>
+                                    </div>
+                                    <div
+                                        onDragOver={(e) => handleDragOver(e, 2)}
+                                        onDragLeave={() => handleDragLeave(2)}
+                                        onDrop={(e) => handleDrop(e, 2)}
+                                        className={`flex-1 relative overflow-hidden rounded-3xl border-2 transition-all duration-500 flex flex-col ${dragOver2
+                                            ? 'border-blue-500 bg-blue-50/50 shadow-2xl shadow-blue-100'
+                                            : 'border-zinc-200 bg-white hover:border-zinc-300 hover:shadow-xl hover:shadow-zinc-200/50'
+                                            } ${file2 ? 'border-zinc-900 border-opacity-10' : 'border-dashed'}`}
+                                    >
+                                        {file2 ? (
+                                            <div className="h-full flex flex-col p-8 items-center justify-center gap-6">
+                                                <div className="p-5 bg-emerald-50 rounded-2xl relative">
+                                                    <FileText className="text-emerald-500" size={48} />
+                                                    <div className="absolute -top-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full border-4 border-white flex items-center justify-center">
+                                                        <CheckCircle2 size={10} className="text-white" />
+                                                    </div>
+                                                </div>
+                                                <div className="text-center space-y-1">
+                                                    <p className="text-sm font-black text-zinc-900 truncate max-w-[200px]">{file2.name}</p>
+                                                    <p className="text-[10px] font-black text-zinc-400 uppercase">
+                                                        {(file2.size / 1024 / 1024).toFixed(2)} MB • READY
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setFile2(null);
+                                                    }}
+                                                    className="px-4 py-2 bg-zinc-100 text-zinc-500 text-[10px] font-bold rounded-lg hover:bg-rose-500 hover:text-white transition-all flex items-center gap-2"
+                                                >
+                                                    <X size={14} />
+                                                    Change File
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div
+                                                className="h-full flex flex-col items-center justify-center p-8 cursor-pointer"
+                                                onClick={() => file2InputRef.current?.click()}
+                                            >
+                                                <div className="p-6 bg-zinc-50 rounded-3xl mb-6 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-500">
+                                                    <Plus className="text-zinc-400" size={32} />
+                                                </div>
+                                                <div className="text-center space-y-2">
+                                                    <p className="text-base font-black text-zinc-900">Import Revised</p>
+                                                    <p className="text-xs font-semibold text-zinc-400">Click or drag PDF document here</p>
+                                                </div>
+                                            </div>
+                                        )}
+                                        <input
+                                            ref={file2InputRef}
+                                            type="file"
+                                            accept=".pdf"
+                                            onChange={handleFile2Change}
+                                            className="hidden"
+                                        />
+                                    </div>
+                                </motion.div>
                             </div>
                         </div>
-
-                        {/* Compare Button moved to right panel */}
                     </div>
                 </div>
             )}
