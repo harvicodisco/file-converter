@@ -947,7 +947,7 @@ export default function RedactPDF() {
                 <div className="bg-red-50/50 rounded-xl p-3 border border-red-100">
                     <p className="text-xs font-black text-red-700 mb-1">⚠️ Warning</p>
                     <p className="text-xs font-semibold text-red-600 leading-relaxed">
-                        Redaction is permanent. Once applied, the underlying content cannot be recovered. Make sure you have a backup of the original file.
+                        Redaction is permanent. Once applied, the underlying content cannot be recovered. Make sure you have a  backup of the original file.
                     </p>
                 </div>
             </div>
@@ -990,175 +990,172 @@ export default function RedactPDF() {
                     <PreviewContent url={result.downloadUrl} fileName={result.fileName} />
                 </div>
             ) : file && pages.length > 0 ? (
-                <div className="w-full h-full flex flex-col p-4">
-                    <div className="mb-6 flex justify-between items-center">
-                        <div>
-                            <h2 className="text-sm font-black text-zinc-400 uppercase tracking-widest mb-1 flex items-center gap-2">
-                                <FileText size={14} className="text-zinc-300" />
-                                Document Preview - Click & Drag to Redact
-                            </h2>
-                            <p className="text-xs text-zinc-500 font-bold">{file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)</p>
+                <div className="w-full h-full flex flex-col overflow-y-auto custom-scrollbar">
+                    <div className="p-4">
+                        <div className="mb-6 flex justify-between items-center">
+                            <div>
+                                <h2 className="text-sm font-black text-zinc-400 uppercase tracking-widest mb-1 flex items-center gap-2">
+                                    <FileText size={14} className="text-zinc-300" />
+                                    Document Preview - Click & Drag to Redact
+                                </h2>
+                                <p className="text-xs text-zinc-500 font-bold">{file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <label className="text-xs font-black text-blue-600 hover:text-blue-700 cursor-pointer flex items-center gap-2 bg-blue-50 px-4 py-2 rounded-xl transition-all active:scale-95">
+                                    <Plus size={14} />
+                                    <span>Replace</span>
+                                    <input type="file" accept=".pdf" onChange={handleFileChange} className="hidden" />
+                                </label>
+                                {redactions.length > 0 && (
+                                    <button
+                                        onClick={clearAllRedactions}
+                                        className="text-xs font-black text-red-600 hover:text-red-700 flex items-center gap-2 bg-red-50 px-4 py-2 rounded-xl transition-all active:scale-95"
+                                    >
+                                        <Trash2 size={14} />
+                                        <span>Clear All</span>
+                                    </button>
+                                )}
+                            </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <label className="text-xs font-black text-blue-600 hover:text-blue-700 cursor-pointer flex items-center gap-2 bg-blue-50 px-4 py-2 rounded-xl transition-all active:scale-95">
-                                <Plus size={14} />
-                                <span>Replace</span>
-                                <input type="file" accept=".pdf" onChange={handleFileChange} className="hidden" />
+
+                        {/* Content Warning */}
+                        {contentWarning && (
+                            <motion.div
+                                initial={{ opacity: 0, y: -10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0 }}
+                                className="mb-4 bg-yellow-50 border-2 border-yellow-300 rounded-xl p-3 flex items-center gap-3"
+                            >
+                                <X className="text-yellow-600 flex-shrink-0" size={18} />
+                                <p className="text-xs font-bold text-yellow-800">{contentWarning}</p>
+                            </motion.div>
+                        )}
+
+                        {/* Page Grid */}
+                        <div className="mb-4">
+                            <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2 ml-1">
+                                Select Page to Redact
                             </label>
-                            {redactions.length > 0 && (
-                                <button
-                                    onClick={clearAllRedactions}
-                                    className="text-xs font-black text-red-600 hover:text-red-700 flex items-center gap-2 bg-red-50 px-4 py-2 rounded-xl transition-all active:scale-95"
-                                >
-                                    <Trash2 size={14} />
-                                    <span>Clear All</span>
-                                </button>
-                            )}
+                            <div className="flex gap-2 overflow-x-auto pb-2">
+                                {pages.map((page, idx) => (
+                                    <button
+                                        key={page.id}
+                                        onClick={() => setSelectedPageId(page.id)}
+                                        className={`flex-shrink-0 w-20 h-28 rounded-lg border-2 overflow-hidden transition-all ${selectedPageId === page.id
+                                            ? "border-red-600 shadow-lg shadow-red-100"
+                                            : "border-zinc-200 hover:border-red-300"
+                                            }`}
+                                    >
+                                        <img
+                                            src={page.thumbnailUrl}
+                                            alt={`Page ${idx + 1}`}
+                                            className="w-full h-full object-cover"
+                                        />
+                                    </button>
+                                ))}
+                            </div>
                         </div>
-                    </div>
 
-                    {/* Content Warning */}
-                    {contentWarning && (
-                        <motion.div
-                            initial={{ opacity: 0, y: -10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0 }}
-                            className="mb-4 bg-yellow-50 border-2 border-yellow-300 rounded-xl p-3 flex items-center gap-3"
-                        >
-                            <X className="text-yellow-600 flex-shrink-0" size={18} />
-                            <p className="text-xs font-bold text-yellow-800">{contentWarning}</p>
-                        </motion.div>
-                    )}
-
-                    {/* Page Grid */}
-                    <div className="mb-4">
-                        <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2 ml-1">
-                            Select Page to Redact
-                        </label>
-                        <div className="flex gap-2 overflow-x-auto pb-2">
-                            {pages.map((page, idx) => (
-                                <button
-                                    key={page.id}
-                                    onClick={() => setSelectedPageId(page.id)}
-                                    className={`flex-shrink-0 w-20 h-28 rounded-lg border-2 overflow-hidden transition-all ${selectedPageId === page.id
-                                        ? "border-red-600 shadow-lg shadow-red-100"
-                                        : "border-zinc-200 hover:border-red-300"
-                                        }`}
+                        {/* Main Preview with Redaction */}
+                        {selectedPage && (
+                            <div className="bg-white rounded-3xl border-2 border-zinc-200 shadow-lg relative overflow-hidden">
+                                <div
+                                    ref={(el) => {
+                                        if (el) canvasRefs.current[selectedPage.id] = el;
+                                    }}
+                                    onMouseDown={(e) => handleMouseDown(e, selectedPage.id)}
+                                    onMouseMove={(e) => handleMouseMove(e, selectedPage.id)}
+                                    onMouseUp={() => handleMouseUp(selectedPage.id)}
+                                    onMouseLeave={() => {
+                                        if (isDragging) {
+                                            handleMouseUp(selectedPage.id);
+                                        }
+                                    }}
+                                    className="w-full relative cursor-crosshair"
                                 >
                                     <img
-                                        src={page.thumbnailUrl}
-                                        alt={`Page ${idx + 1}`}
-                                        className="w-full h-full object-cover"
+                                        ref={(el) => {
+                                            if (el) imageRefs.current[selectedPage.id] = el;
+                                        }}
+                                        src={selectedPage.thumbnailUrl}
+                                        alt={`Page ${selectedPage.originalIndex + 1}`}
+                                        className="w-full h-auto"
+                                        draggable={false}
                                     />
-                                    {/* Page number overlay - commented out */}
-                                    {/* <div className="absolute bottom-0 left-0 right-0 bg-zinc-900/80 text-white text-[10px] font-black px-1 py-0.5 text-center">
-                                        {idx + 1}
-                                    </div> */}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
 
-                    {/* Main Preview with Redaction */}
-                    {selectedPage && (
-                        <div className="flex-1 min-h-[500px] bg-white rounded-3xl overflow-hidden border-2 border-zinc-200 shadow-lg relative">
-                            <div
-                                ref={(el) => {
-                                    if (el) canvasRefs.current[selectedPage.id] = el;
-                                }}
-                                onMouseDown={(e) => handleMouseDown(e, selectedPage.id)}
-                                onMouseMove={(e) => handleMouseMove(e, selectedPage.id)}
-                                onMouseUp={() => handleMouseUp(selectedPage.id)}
-                                onMouseLeave={() => {
-                                    if (isDragging) {
-                                        handleMouseUp(selectedPage.id);
-                                    }
-                                }}
-                                className="w-full h-full relative cursor-crosshair overflow-auto"
-                                style={{ minHeight: "500px" }}
-                            >
-                                <img
-                                    ref={(el) => {
-                                        if (el) imageRefs.current[selectedPage.id] = el;
-                                    }}
-                                    src={selectedPage.thumbnailUrl}
-                                    alt={`Page ${selectedPage.originalIndex + 1}`}
-                                    className="w-full h-full object-contain"
-                                    draggable={false}
-                                />
+                                    {/* Existing Redactions */}
+                                    {(() => {
+                                        const bounds = getImageBounds(selectedPage.id);
+                                        if (!bounds) return null;
 
-                                {/* Existing Redactions */}
-                                {(() => {
-                                    const bounds = getImageBounds(selectedPage.id);
-                                    if (!bounds) return null;
+                                        return pageRedactions.map((redaction) => {
+                                            // Convert percentage to actual pixels relative to image
+                                            // Use exact dimensions - no padding needed
+                                            const left = bounds.left + (redaction.x / 100) * bounds.width;
+                                            const top = bounds.top + (redaction.y / 100) * bounds.height;
+                                            const width = (redaction.width / 100) * bounds.width;
+                                            const height = (redaction.height / 100) * bounds.height;
 
-                                    return pageRedactions.map((redaction) => {
+                                            return (
+                                                <div
+                                                    key={redaction.id}
+                                                    className="absolute pointer-events-none group"
+                                                    style={{
+                                                        left: `${Math.max(0, left)}px`,
+                                                        top: `${Math.max(0, top)}px`,
+                                                        width: `${width}px`,
+                                                        height: `${height}px`,
+                                                    }}
+                                                >
+                                                    <div
+                                                        className="absolute inset-0"
+                                                        style={{ backgroundColor: redactionColor }}
+                                                    />
+                                                    <button
+                                                        onClick={() => removeRedaction(redaction.id)}
+                                                        className="absolute -top-2 -right-2 w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-auto shadow-lg"
+                                                    >
+                                                        <X size={12} />
+                                                    </button>
+                                                </div>
+                                            );
+                                        });
+                                    })()}
+
+                                    {/* Current Redaction Being Drawn */}
+                                    {currentRedaction && currentRedaction.width > 0 && currentRedaction.height > 0 && (() => {
+                                        const bounds = getImageBounds(selectedPage.id);
+                                        if (!bounds) return null;
+
                                         // Convert percentage to actual pixels relative to image
-                                        // Use exact dimensions - no padding needed
-                                        const left = bounds.left + (redaction.x / 100) * bounds.width;
-                                        const top = bounds.top + (redaction.y / 100) * bounds.height;
-                                        const width = (redaction.width / 100) * bounds.width;
-                                        const height = (redaction.height / 100) * bounds.height;
+                                        const left = bounds.left + (currentRedaction.x / 100) * bounds.width;
+                                        const top = bounds.top + (currentRedaction.y / 100) * bounds.height;
+                                        const width = (currentRedaction.width / 100) * bounds.width;
+                                        const height = (currentRedaction.height / 100) * bounds.height;
 
                                         return (
                                             <div
-                                                key={redaction.id}
-                                                className="absolute pointer-events-none group"
+                                                className="absolute pointer-events-none"
                                                 style={{
-                                                    left: `${Math.max(0, left)}px`,
-                                                    top: `${Math.max(0, top)}px`,
+                                                    left: `${left}px`,
+                                                    top: `${top}px`,
                                                     width: `${width}px`,
                                                     height: `${height}px`,
                                                 }}
                                             >
                                                 <div
-                                                    className="absolute inset-0"
-                                                    style={{ backgroundColor: redactionColor }}
+                                                    className="absolute inset-0 border-2 border-dashed border-red-600"
+                                                    style={{ backgroundColor: `${redactionColor}60` }}
                                                 />
-                                                <button
-                                                    onClick={() => removeRedaction(redaction.id)}
-                                                    className="absolute -top-2 -right-2 w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-auto shadow-lg"
-                                                >
-                                                    <X size={12} />
-                                                </button>
                                             </div>
                                         );
-                                    });
-                                })()}
-
-                                {/* Current Redaction Being Drawn */}
-                                {currentRedaction && currentRedaction.width > 0 && currentRedaction.height > 0 && (() => {
-                                    const bounds = getImageBounds(selectedPage.id);
-                                    if (!bounds) return null;
-
-                                    // Convert percentage to actual pixels relative to image
-                                    const left = bounds.left + (currentRedaction.x / 100) * bounds.width;
-                                    const top = bounds.top + (currentRedaction.y / 100) * bounds.height;
-                                    const width = (currentRedaction.width / 100) * bounds.width;
-                                    const height = (currentRedaction.height / 100) * bounds.height;
-
-                                    return (
-                                        <div
-                                            className="absolute pointer-events-none"
-                                            style={{
-                                                left: `${left}px`,
-                                                top: `${top}px`,
-                                                width: `${width}px`,
-                                                height: `${height}px`,
-                                            }}
-                                        >
-                                            <div
-                                                className="absolute inset-0 border-2 border-dashed border-red-600"
-                                                style={{ backgroundColor: `${redactionColor}60` }}
-                                            />
-                                        </div>
-                                    );
-                                })()}
+                                    })()}
 
 
+                                </div>
                             </div>
-                        </div>
-                    )}
+                        )}
+                    </div>
                 </div>
             ) : (
                 <div className="text-center max-w-sm px-6">

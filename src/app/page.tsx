@@ -5,12 +5,13 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Upload, FileText, CheckCircle2, Loader2, ArrowRight,
   Merge, Scissors, Minimize2, Sheet, Presentation,
-  Image as ImageIcon, FileImage, FileSpreadsheet, Zap, Settings, Globe, Crop, Scan, Hash, Wrench, Eraser
+  Image as ImageIcon, FileImage, FileSpreadsheet, Zap, Settings, Globe, Crop, Scan, Hash, Wrench, Eraser,Pencil, GitCompare
 } from "lucide-react";
 import Link from "next/link";
 
 const tools = [
   { name: "Merge PDF", href: "/merge-pdf", icon: Merge, description: "Combine multiple PDFs into one file", color: "text-blue-600", bg: "bg-blue-50" },
+  { name: "Edit PDF", href: "/edit-pdf", icon: Pencil, description: "Add text, shapes, and freehand drawing to PDF", color: "text-indigo-600", bg: "bg-indigo-50" },
   { name: "Split PDF", href: "/split-pdf", icon: Scissors, description: "Extract pages from your PDF", color: "text-indigo-600", bg: "bg-indigo-50" },
   { name: "Organize PDF", href: "/organize-pdf", icon: Settings, description: "Rearrange, delete, or reorder pages", color: "text-purple-600", bg: "bg-purple-50" },
   { name: "Crop PDF", href: "/crop-pdf", icon: Crop, description: "Remove unwanted margins and areas", color: "text-orange-600", bg: "bg-orange-50" },
@@ -19,6 +20,7 @@ const tools = [
   { name: "Add Page Numbers", href: "/add-page-numbers", icon: Hash, description: "Add page numbers with customizable positions and styles", color: "text-purple-600", bg: "bg-purple-50" },
   { name: "Repair PDF", href: "/repair-pdf", icon: Wrench, description: "Fix corrupted or damaged PDF files", color: "text-amber-600", bg: "bg-amber-50" },
   { name: "Redact PDF", href: "/redact-pdf", icon: Eraser, description: "Permanently remove sensitive information", color: "text-red-600", bg: "bg-red-50" },
+  { name: "Compare PDF", href: "/compare-pdf", icon: GitCompare, description: "Compare two PDFs to find differences", color: "text-indigo-600", bg: "bg-indigo-50" },
   { name: "PDF to Word", href: "/pdf-to-word", icon: FileText, description: "Convert documents to editable Word", color: "text-blue-500", bg: "bg-blue-50/50" },
   { name: "PDF to Excel", href: "/pdf-to-excel", icon: Sheet, description: "Turn PDFs into editable spreadsheets", color: "text-emerald-600", bg: "bg-emerald-50" },
   { name: "PDF to PPT", href: "/pdf-to-ppt", icon: Presentation, description: "Create PowerPoint slides from PDF", color: "text-orange-600", bg: "bg-orange-50" },
