@@ -22,7 +22,8 @@ import {
     Hash,
     Wrench,
     Eraser,
-    Pencil
+    Pencil,
+    GitCompare
 } from "lucide-react";
 
 
@@ -45,6 +46,7 @@ export default function Navbar() {
                 { name: "Repair PDF", href: "/repair-pdf", icon: Wrench },
                 { name: "Redact PDF", href: "/redact-pdf", icon: Eraser },
                 { name: "Edit PDF", href: "/edit-pdf", icon: Pencil },
+                { name: "Compare PDF", href: "/compare-pdf", icon: GitCompare },
             ]
         },
         {
