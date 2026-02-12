@@ -1,0 +1,1179 @@
+"use client";
+
+import { useState, useRef } from "react";
+import {
+    Eraser,
+    Plus,
+    FileText,
+    Trash2,
+    X,
+    Square,
+    Search,
+    Type
+} from "lucide-react";
+import ConversionLayout from "@/components/ConversionLayout";
+import ProcessingButton from "@/components/ProcessingButton";
+import DownloadResult from "@/components/DownloadResult";
+import PreviewContent from "@/components/PreviewContent";
+import { motion } from "framer-motion";
+
+interface RedactionArea {
+    id: string;
+    x: number; // percentage
+    y: number; // percentage
+    width: number; // percentage
+    height: number; // percentage
+    pageIndex: number;
+    searchTerm?: string; // Optional: if created from text search
+}
+
+interface PageData {
+    id: string;
+    originalIndex: number;
+    thumbnailUrl: string;
+    pageWidth: number;
+    pageHeight: number;
+    pageObject?: any; // PDF.js page object for text extraction
+    canvasElement?: HTMLCanvasElement; // Canvas element for pixel analysis
+}
+
+export default function RedactPDF() {
+    const [file, setFile] = useState<File | null>(null);
+    const [pages, setPages] = useState<PageData[]>([]);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [isLoadingPages, setIsLoadingPages] = useState(false);
+    const [result, setResult] = useState<{ fileName: string; downloadUrl: string } | null>(null);
+    const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
+    const [redactions, setRedactions] = useState<RedactionArea[]>([]);
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+    const [currentRedaction, setCurrentRedaction] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+    const [redactionColor, setRedactionColor] = useState("#000000");
+    const [contentWarning, setContentWarning] = useState<string | null>(null);
+    const [searchTerms, setSearchTerms] = useState<string[]>([]);
+    const [searchInput, setSearchInput] = useState("");
+    const [isSearching, setIsSearching] = useState(false);
+    const [hasShownWhitespaceWarning, setHasShownWhitespaceWarning] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const searchInputRef = useRef<HTMLInputElement>(null);
+    const canvasRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+    const imageRefs = useRef<{ [key: string]: HTMLImageElement | null }>({});
+    const pdfDocRef = useRef<any>(null); // Store PDF document reference
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const selectedFile = e.target.files?.[0];
+        if (selectedFile && selectedFile.type === "application/pdf") {
+            setFile(selectedFile);
+            loadPDFPages(selectedFile);
+        }
+    };
+
+    const loadPDFPages = async (pdfFile: File) => {
+        setIsLoadingPages(true);
+        setPages([]);
+        setRedactions([]);
+        try {
+            const pdfjsLib = await import('pdfjs-dist');
+            pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+
+            const arrayBuffer = await pdfFile.arrayBuffer();
+            const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+            const pdf = await loadingTask.promise;
+            pdfDocRef.current = pdf; // Store PDF reference
+
+            const loadedPages: PageData[] = [];
+
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const viewport = page.getViewport({ scale: 1.0 });
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+
+                if (context) {
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+
+                    await page.render({
+                        canvasContext: context as any,
+                        viewport: viewport,
+                        canvas: canvas as any
+                    }).promise;
+
+                    loadedPages.push({
+                        id: `page-${i}-${Date.now()}`,
+                        originalIndex: i - 1,
+                        thumbnailUrl: canvas.toDataURL(),
+                        pageWidth: viewport.width,
+                        pageHeight: viewport.height,
+                        pageObject: page,
+                        canvasElement: canvas,
+                    });
+                }
+            }
+
+            setPages(loadedPages);
+            if (loadedPages.length > 0) {
+                setSelectedPageId(loadedPages[0].id);
+            }
+        } catch (error) {
+            console.error("Error loading PDF pages:", error);
+            alert("Failed to load PDF pages");
+        } finally {
+            setIsLoadingPages(false);
+        }
+    };
+
+    // Check if selected area contains content (text or images)
+    const checkAreaHasContent = async (
+        pageData: PageData,
+        x: number,
+        y: number,
+        width: number,
+        height: number
+    ): Promise<boolean> => {
+        try {
+            // Convert percentage to actual coordinates
+            const pageWidth = pageData.pageWidth;
+            const pageHeight = pageData.pageHeight;
+            const actualX = (x / 100) * pageWidth;
+            const actualY = (y / 100) * pageHeight;
+            const actualWidth = (width / 100) * pageWidth;
+            const actualHeight = (height / 100) * pageHeight;
+
+            // Check 1: Extract text from the selected region
+            if (pageData.pageObject) {
+                try {
+                    const textContent = await pageData.pageObject.getTextContent();
+                    const viewport = pageData.pageObject.getViewport({ scale: 1.0 });
+
+                    // Check if any text items intersect with the selected area
+                    // PDF coordinates: origin is bottom-left, Y increases upward
+                    const pdfY = pageHeight - (actualY + actualHeight);
+                    const pdfY2 = pageHeight - actualY;
+
+                    for (const item of textContent.items) {
+                        if (item.transform) {
+                            // item.transform[4] is X, item.transform[5] is Y
+                            const textX = item.transform[4];
+                            const textY = item.transform[5];
+
+                            // Check if text is within the selected area
+                            if (
+                                textX >= actualX &&
+                                textX <= actualX + actualWidth &&
+                                textY >= Math.min(pdfY, pdfY2) &&
+                                textY <= Math.max(pdfY, pdfY2)
+                            ) {
+                                // Found text in the area
+                                return true;
+                            }
+                        }
+                    }
+                } catch (textError) {
+                    // If text extraction fails, continue to image check
+                    console.warn("Text extraction failed:", textError);
+                }
+            }
+
+            // Check 2: Analyze canvas pixels for non-white content
+            if (pageData.canvasElement) {
+                const canvas = pageData.canvasElement;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    const imgData = ctx.getImageData(
+                        Math.floor(actualX),
+                        Math.floor(actualY),
+                        Math.floor(actualWidth),
+                        Math.floor(actualHeight)
+                    );
+
+                    // Check if there are non-white pixels (with some tolerance for near-white)
+                    const pixels = imgData.data;
+                    let nonWhitePixels = 0;
+                    const totalPixels = pixels.length / 4; // RGBA = 4 values per pixel
+
+                    for (let i = 0; i < pixels.length; i += 4) {
+                        const r = pixels[i];
+                        const g = pixels[i + 1];
+                        const b = pixels[i + 2];
+                        const a = pixels[i + 3];
+
+                        // Check if pixel is not white/transparent
+                        // Consider pixels with alpha > 0 and not near-white (RGB > 240)
+                        if (a > 10 && (r < 240 || g < 240 || b < 240)) {
+                            nonWhitePixels++;
+                        }
+                    }
+
+                    // If more than 5% of pixels are non-white, consider it as having content
+                    const contentRatio = nonWhitePixels / totalPixels;
+                    if (contentRatio > 0.05) {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        } catch (error) {
+            console.error("Error checking content:", error);
+            // If check fails, allow redaction (fail-safe)
+            return true;
+        }
+    };
+
+    // Get actual image bounds (accounting for object-contain)
+    const getImageBounds = (pageId: string) => {
+        const container = canvasRefs.current[pageId];
+        const image = imageRefs.current[pageId];
+        if (!container || !image) return null;
+
+        const containerRect = container.getBoundingClientRect();
+        const imageRect = image.getBoundingClientRect();
+
+        // Natural dimensions of the image (PDF pixels/points)
+        const naturalWidth = image.naturalWidth;
+        const naturalHeight = image.naturalHeight;
+
+        if (!naturalWidth || !naturalHeight) {
+            // Fallback if natural dimensions aren't available yet
+            return {
+                left: imageRect.left - containerRect.left,
+                top: imageRect.top - containerRect.top,
+                width: imageRect.width,
+                height: imageRect.height,
+                containerWidth: containerRect.width,
+                containerHeight: containerRect.height
+            };
+        }
+
+        // Calculate the actual rendered dimensions of the image content (object-contain logic)
+        const contentRatio = naturalWidth / naturalHeight;
+        const containerRatio = imageRect.width / imageRect.height;
+
+        let renderedWidth, renderedHeight, renderedLeft, renderedTop;
+
+        if (containerRatio > contentRatio) {
+            // Container is wider than image, image is height-constrained
+            renderedHeight = imageRect.height;
+            renderedWidth = renderedHeight * contentRatio;
+            renderedLeft = (imageRect.width - renderedWidth) / 2;
+            renderedTop = 0;
+        } else {
+            // Container is taller than image, image is width-constrained
+            renderedWidth = imageRect.width;
+            renderedHeight = renderedWidth / contentRatio;
+            renderedLeft = 0;
+            renderedTop = (imageRect.height - renderedHeight) / 2;
+        }
+
+        return {
+            left: (imageRect.left - containerRect.left) + renderedLeft,
+            top: (imageRect.top - containerRect.top) + renderedTop,
+            width: renderedWidth,
+            height: renderedHeight,
+            containerWidth: containerRect.width,
+            containerHeight: containerRect.height
+        };
+    };
+
+    const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>, pageId: string) => {
+        if (e.button !== 0) return; // Only left mouse button
+
+        const bounds = getImageBounds(pageId);
+        if (!bounds) return;
+
+        const container = canvasRefs.current[pageId];
+        if (!container) return;
+
+        const containerRect = container.getBoundingClientRect();
+        const mouseX = e.clientX - containerRect.left;
+        const mouseY = e.clientY - containerRect.top;
+
+        // Check if click is within image bounds
+        if (mouseX < bounds.left || mouseX > bounds.left + bounds.width ||
+            mouseY < bounds.top || mouseY > bounds.top + bounds.height) {
+            return; // Click outside image, ignore
+        }
+
+        // Calculate percentage relative to image, not container
+        const x = ((mouseX - bounds.left) / bounds.width) * 100;
+        const y = ((mouseY - bounds.top) / bounds.height) * 100;
+
+        setIsDragging(true);
+        setDragStart({ x, y });
+        setCurrentRedaction({ x, y, width: 0, height: 0 });
+    };
+
+    const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>, pageId: string) => {
+        if (!isDragging || !dragStart || !currentRedaction) return;
+
+        const bounds = getImageBounds(pageId);
+        if (!bounds) return;
+
+        const container = canvasRefs.current[pageId];
+        if (!container) return;
+
+        const containerRect = container.getBoundingClientRect();
+        const mouseX = e.clientX - containerRect.left;
+        const mouseY = e.clientY - containerRect.top;
+
+        // Constrain to image bounds
+        const constrainedX = Math.max(bounds.left, Math.min(mouseX, bounds.left + bounds.width));
+        const constrainedY = Math.max(bounds.top, Math.min(mouseY, bounds.top + bounds.height));
+
+        // Calculate percentage relative to image
+        const currentX = ((constrainedX - bounds.left) / bounds.width) * 100;
+        const currentY = ((constrainedY - bounds.top) / bounds.height) * 100;
+
+        const x = Math.min(dragStart.x, currentX);
+        const y = Math.min(dragStart.y, currentY);
+        const width = Math.abs(currentX - dragStart.x);
+        const height = Math.abs(currentY - dragStart.y);
+
+        setCurrentRedaction({ x, y, width, height });
+    };
+
+    const handleMouseUp = async (pageId: string) => {
+        if (!isDragging || !currentRedaction || !dragStart) return;
+
+        if (currentRedaction.width > 1 && currentRedaction.height > 1) {
+            const pageData = pages.find(p => p.id === pageId);
+
+            if (pageData) {
+                // Check if the selected area contains content
+                const hasContent = await checkAreaHasContent(
+                    pageData,
+                    currentRedaction.x,
+                    currentRedaction.y,
+                    currentRedaction.width,
+                    currentRedaction.height
+                );
+
+                if (!hasContent) {
+                    // Show warning only first time
+                    if (!hasShownWhitespaceWarning) {
+                        setContentWarning("No content detected in selected area. Please select an area with text or images.");
+                        setTimeout(() => setContentWarning(null), 3000);
+                        setHasShownWhitespaceWarning(true);
+                    }
+                    setIsDragging(false);
+                    setDragStart(null);
+                    setCurrentRedaction(null);
+                    return;
+                }
+
+                // Clear any previous warning
+                setContentWarning(null);
+
+                // Add redaction if content is detected
+                const pageIndex = pages.findIndex(p => p.id === pageId);
+                const newRedaction: RedactionArea = {
+                    id: `redact-${Date.now()}-${Math.random()}`,
+                    x: currentRedaction.x,
+                    y: currentRedaction.y,
+                    width: currentRedaction.width,
+                    height: currentRedaction.height,
+                    pageIndex: pageIndex,
+                };
+                setRedactions([...redactions, newRedaction]);
+            }
+        }
+
+        setIsDragging(false);
+        setDragStart(null);
+        setCurrentRedaction(null);
+    };
+
+    const removeRedaction = (id: string) => {
+        setRedactions(redactions.filter(r => r.id !== id));
+    };
+
+    const clearAllRedactions = () => {
+        setRedactions([]);
+        setSearchTerms([]);
+    };
+
+    // Search for text and create redactions automatically
+    const searchAndRedactText = async (searchText: string) => {
+        if (!searchText.trim() || !pdfDocRef.current || pages.length === 0) return;
+
+        setIsSearching(true);
+        const foundRedactions: RedactionArea[] = [];
+
+        try {
+            const pdf = pdfDocRef.current;
+            const normalizedSearch = searchText.toLowerCase().trim();
+            const escapedSearch = normalizedSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const searchRegex = new RegExp(`\\b${escapedSearch}\\b`, 'gi');
+
+            for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                // Reset regex for each page to avoid stateful index issues
+                searchRegex.lastIndex = 0;
+
+                const page = await pdf.getPage(pageNum);
+                const pageData = pages.find(p => p.originalIndex === pageNum - 1);
+
+                if (!pageData) continue;
+
+                // Use scale 1.0 to get coordinates in standard PDF points (matches text content)
+                const viewport = page.getViewport({ scale: 1.0 });
+                const textContent = await page.getTextContent({ disableCombineTextItems: true });
+
+                const pageWidth = viewport.width;
+                const pageHeight = viewport.height;
+
+                let fullText = "";
+                const textMap: Array<{
+                    pdfX: number;
+                    pdfY: number;
+                    pdfWidth: number;
+                    pdfHeight: number;
+                    charIndex: number;
+                    sourceItem: any; // Reference to the original PDF text item
+                }> = [];
+
+                let lastItem: any = null;
+
+                for (const item of textContent.items as any[]) {
+                    if (!item.str) continue;
+
+                    const str = item.str;
+                    const transform = item.transform;
+
+                    const fontSize = Math.sqrt(transform[0] * transform[0] + transform[1] * transform[1]);
+                    const width = item.width || 0;
+                    const height = item.height || fontSize;
+
+                    // Detect if we should add a space between items
+                    if (lastItem) {
+                        const lastX = lastItem.transform[4] + lastItem.width;
+                        const lastY = lastItem.transform[5];
+                        const currX = transform[4];
+                        const currY = transform[5];
+
+                        // If on a different line or a significant horizontal gap
+                        const isDifferentLine = Math.abs(currY - lastY) > fontSize / 2;
+                        const hasGap = (currX - lastX) > (fontSize * 0.15); // Tightened gap detection
+
+                        if (isDifferentLine || hasGap) {
+                            fullText += " ";
+                        }
+                    }
+
+                    // Create a temporary canvas context for measuring character widths
+                    // This allows us to handle proportional fonts accurately
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) {
+                        ctx.font = `${fontSize}px Arial, sans-serif`; // Approximation for measurement
+                        const totalCanvasWidth = ctx.measureText(str).width || 1;
+
+                        // Map each character in the string using accurate offsets
+                        for (let k = 0; k < str.length; k++) {
+                            const canvasOffset = ctx.measureText(str.substring(0, k)).width;
+                            const charCanvasWidth = ctx.measureText(str[k]).width;
+
+                            // Scale canvas offsets to PDF width
+                            const pdfOffset = (canvasOffset / totalCanvasWidth) * width;
+                            const charPdfWidth = (charCanvasWidth / totalCanvasWidth) * width;
+
+                            textMap.push({
+                                pdfX: transform[4] + pdfOffset,
+                                pdfY: transform[5],
+                                pdfWidth: charPdfWidth,
+                                pdfHeight: height,
+                                charIndex: fullText.length + k,
+                                sourceItem: item
+                            });
+                        }
+                    } else {
+                        // Fallback to average width if canvas fails
+                        for (let k = 0; k < str.length; k++) {
+                            const charWidth = width / str.length;
+                            textMap.push({
+                                pdfX: transform[4] + (k * charWidth),
+                                pdfY: transform[5],
+                                pdfWidth: charWidth,
+                                pdfHeight: height,
+                                charIndex: fullText.length + k,
+                                sourceItem: item
+                            });
+                        }
+                    }
+
+                    fullText += str;
+                    lastItem = item;
+                }
+
+                // Perform search
+                let match;
+                while ((match = searchRegex.exec(fullText)) !== null) {
+                    const matchStart = match.index;
+                    const matchEnd = matchStart + match[0].length;
+
+                    // Find atoms corresponding to the match
+                    const matchAtoms = textMap.filter(atom =>
+                        atom.charIndex >= matchStart && atom.charIndex < matchEnd
+                    );
+
+                    if (matchAtoms.length > 0) {
+                        // Check if all matched characters come from the same source text item
+                        const firstSourceItem = matchAtoms[0].sourceItem;
+                        const allSameSource = matchAtoms.every(atom => atom.sourceItem === firstSourceItem);
+
+                        let minX: number, maxX: number, minY: number, maxY: number;
+
+                        if (allSameSource && firstSourceItem) {
+                            // All characters from same item - use the item's actual bounds
+                            const transform = firstSourceItem.transform;
+                            const itemWidth = firstSourceItem.width || 0;
+                            const itemHeight = firstSourceItem.height || Math.sqrt(transform[0] * transform[0] + transform[1] * transform[1]);
+
+                            // Find the portion of the item that contains our match
+                            const firstAtom = matchAtoms[0];
+                            const lastAtom = matchAtoms[matchAtoms.length - 1];
+
+                            // Get the actual last character to determine if we need extra padding
+                            // Calculate which character we're looking at based on map index
+                            const lastChar = fullText[lastAtom.charIndex];
+
+                            // Dynamic padding based on character width characteristics
+                            let headerPadding = 0.01; // Tight horizontal start
+                            let trailerPadding = 0.1; // Moderate base trailer
+
+                            const wideChars = ['m', 'w', 'M', 'W', '@', '%', 'O', 'Q', 'G', 'D'];
+                            const narrowChars = ['i', 'l', 't', 'f', 'I', 'j', '.', ',', ';', ':'];
+
+                            if (wideChars.includes(lastChar)) {
+                                trailerPadding = 0.25; // Balanced padding for wide characters
+                            } else if (narrowChars.includes(lastChar)) {
+                                trailerPadding = 0.05; // Extra tight for narrow characters
+                            }
+
+                            const pdfRect = [
+                                firstAtom.pdfX - (firstAtom.pdfWidth * headerPadding),
+                                transform[5] - (itemHeight * 0.2), // Use item baseline
+                                lastAtom.pdfX + (lastAtom.pdfWidth * (1 + trailerPadding)),
+                                transform[5] + (itemHeight * 0.75) // Use item height
+                            ];
+
+                            const viewRect = viewport.convertToViewportRectangle(pdfRect as any);
+                            minX = Math.min(viewRect[0], viewRect[2]);
+                            maxX = Math.max(viewRect[0], viewRect[2]);
+                            minY = Math.min(viewRect[1], viewRect[3]);
+                            maxY = Math.max(viewRect[1], viewRect[3]);
+                        } else {
+                            // Match spans multiple items - use character-level calculation
+                            minX = Infinity;
+                            maxX = -Infinity;
+                            minY = Infinity;
+                            maxY = -Infinity;
+
+                            matchAtoms.forEach(atom => {
+                                const pdfRect = [
+                                    atom.pdfX - (atom.pdfWidth * 0.02),
+                                    atom.pdfY - (atom.pdfHeight * 0.2),
+                                    atom.pdfX + (atom.pdfWidth * 1.1),
+                                    atom.pdfY + (atom.pdfHeight * 0.75)
+                                ];
+
+                                const viewRect = viewport.convertToViewportRectangle(pdfRect as any);
+
+                                minX = Math.min(minX, viewRect[0], viewRect[2]);
+                                maxX = Math.max(maxX, viewRect[0], viewRect[2]);
+                                minY = Math.min(minY, viewRect[1], viewRect[3]);
+                                maxY = Math.max(maxY, viewRect[1], viewRect[3]);
+                            });
+                        }
+
+                        // Add very minimal final buffer
+                        let maxFontSize = 0;
+                        matchAtoms.forEach(atom => {
+                            maxFontSize = Math.max(maxFontSize, atom.pdfHeight);
+                        });
+
+                        const bufferX = maxFontSize * 0.05; // Tight final horizontal buffer
+                        const bufferY = maxFontSize * 0.02; // Tight final vertical buffer
+
+                        minX = Math.max(0, minX - bufferX);
+                        maxX = Math.min(pageWidth, maxX + bufferX);
+                        minY = Math.max(0, minY - bufferY);
+                        maxY = Math.min(pageHeight, maxY + bufferY);
+
+                        // Calculate percentages relative to viewport dimensions
+                        const xPercent = (minX / pageWidth) * 100;
+                        const yPercent = (minY / pageHeight) * 100;
+                        const widthPercent = ((maxX - minX) / pageWidth) * 100;
+                        const heightPercent = ((maxY - minY) / pageHeight) * 100;
+
+                        if (widthPercent > 0.01 && heightPercent > 0.01) {
+                            foundRedactions.push({
+                                id: `search-${Date.now()}-${Math.random()}`,
+                                x: xPercent,
+                                y: yPercent,
+                                width: widthPercent,
+                                height: heightPercent,
+                                pageIndex: pageNum - 1,
+                                searchTerm: searchText,
+                            });
+                        }
+                    }
+                }
+            }
+
+            if (foundRedactions.length > 0) {
+                setRedactions(prev => [...prev, ...foundRedactions]);
+                if (!searchTerms.includes(searchText.trim())) {
+                    setSearchTerms(prev => [...prev, searchText.trim()]);
+                }
+                setSearchInput("");
+
+                // Automatically switch to the page containing the first redaction
+                const firstRedactionPageIndex = foundRedactions[0].pageIndex;
+                const pageToShow = pages.find(p => p.originalIndex === firstRedactionPageIndex);
+                if (pageToShow) {
+                    setSelectedPageId(pageToShow.id);
+                }
+            } else {
+                setContentWarning(`No matches found for "${searchText}"`);
+                setTimeout(() => setContentWarning(null), 3000);
+            }
+        } catch (error) {
+            console.error("Text search error:", error);
+            setContentWarning("Error searching for text. Please try again.");
+            setTimeout(() => setContentWarning(null), 3000);
+        } finally {
+            setIsSearching(false);
+        }
+    };
+
+    const handleSearchSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (searchInput.trim()) {
+            searchAndRedactText(searchInput.trim());
+        }
+    };
+
+    const removeSearchTerm = (term: string) => {
+        setSearchTerms(prev => prev.filter(t => t !== term));
+        // Remove all redactions created from this search term
+        setRedactions(prev => prev.filter(r => r.searchTerm !== term));
+    };
+
+    const handleRedact = async () => {
+        if (!file || redactions.length === 0 || !pdfDocRef.current) return;
+
+        setIsProcessing(true);
+
+        try {
+            const { PDFDocument, rgb } = await import('pdf-lib');
+            const pdf = pdfDocRef.current;
+            const newPdfDoc = await PDFDocument.create();
+
+            // Group redactions by page
+            const redactionsByPage: { [pageIndex: number]: RedactionArea[] } = {};
+            redactions.forEach((redaction) => {
+                if (!redactionsByPage[redaction.pageIndex]) {
+                    redactionsByPage[redaction.pageIndex] = [];
+                }
+                redactionsByPage[redaction.pageIndex].push(redaction);
+            });
+
+            const color = hexToRgb(redactionColor);
+
+            // Process each page
+            for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                const page = await pdf.getPage(pageNum);
+                const pageData = pages.find(p => p.originalIndex === pageNum - 1);
+
+                if (!pageData) continue;
+
+                // Render page to canvas at high quality
+                const viewport = page.getViewport({ scale: 1.0 }); // Higher scale for better quality
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+
+                if (!context) continue;
+
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                await page.render({
+                    canvasContext: context as any,
+                    viewport: viewport,
+                    canvas: canvas as any
+                }).promise;
+
+                // Draw redaction boxes on the canvas
+                const pageRedactions = redactionsByPage[pageNum - 1] || [];
+                for (const redaction of pageRedactions) {
+                    // Convert percentage to canvas coordinates
+                    const x = (redaction.x / 100) * canvas.width;
+                    const y = (redaction.y / 100) * canvas.height;
+                    const width = (redaction.width / 100) * canvas.width;
+                    const height = (redaction.height / 100) * canvas.height;
+
+                    // Draw redaction box
+                    context.fillStyle = redactionColor;
+                    context.fillRect(
+                        Math.max(0, x),
+                        Math.max(0, y),
+                        width,
+                        height
+                    );
+                }
+
+                // Convert canvas to JPEG image
+                const imageData = canvas.toDataURL('image/jpeg', 0.95);
+                const imageBytes = await fetch(imageData).then(res => res.arrayBuffer());
+                const image = await newPdfDoc.embedJpg(imageBytes);
+
+                // Create new page with the redacted image
+                const { width, height } = image.scale(1);
+                const pdfPage = newPdfDoc.addPage([width, height]);
+                pdfPage.drawImage(image, { x: 0, y: 0, width, height });
+            }
+
+            // Save the redacted PDF
+            const pdfBytes = await newPdfDoc.save({
+                useObjectStreams: false,
+                addDefaultPage: false,
+            });
+
+            const blob = new Blob([pdfBytes as any], { type: 'application/pdf' });
+            const downloadUrl = URL.createObjectURL(blob);
+
+            setResult({
+                fileName: `redacted_${file.name}`,
+                downloadUrl: downloadUrl,
+            });
+        } catch (error) {
+            console.error("Redact error:", error);
+            alert("An error occurred during PDF redaction: " + (error instanceof Error ? error.message : String(error)));
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    // Helper function to convert hex to RGB
+    const hexToRgb = (hex: string): { r: number; g: number; b: number } => {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result
+            ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16),
+            }
+            : { r: 0, g: 0, b: 0 };
+    };
+
+    const handleReset = () => {
+        if (result?.downloadUrl) {
+            URL.revokeObjectURL(result.downloadUrl);
+        }
+        setFile(null);
+        setPages([]);
+        setRedactions([]);
+        setResult(null);
+        setSelectedPageId(null);
+        setCurrentRedaction(null);
+        setSearchTerms([]);
+        setSearchInput("");
+        setHasShownWhitespaceWarning(false);
+    };
+
+    const selectedPage = pages.find(p => p.id === selectedPageId);
+    const pageRedactions = selectedPage ? redactions.filter(r => {
+        const pageIndex = pages.findIndex(p => p.id === selectedPageId);
+        return r.pageIndex === pageIndex;
+    }) : [];
+
+    const SettingsPanel = (
+        <div className="flex flex-col h-full">
+            <div className="space-y-6 mb-6">
+                {/* Info Box */}
+                <div className="bg-red-50/50 rounded-xl p-4 border border-red-100">
+                    <div className="flex items-start gap-3">
+                        <Eraser className="text-red-600 flex-shrink-0 mt-0.5" size={20} />
+                        <div>
+                            <p className="text-xs font-black text-red-700 mb-1">Permanent Redaction</p>
+                            <p className="text-xs font-semibold text-red-600 leading-relaxed">
+                                Draw boxes over sensitive information to permanently remove it. Redacted content cannot be recovered.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Text Search */}
+                <div>
+                    <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3 ml-1">
+                        Search & Redact Text
+                    </label>
+                    <form onSubmit={handleSearchSubmit} className="space-y-2">
+                        <div className="flex flex-wrap gap-2 p-2 min-h-[44px] border-2 border-zinc-200 rounded-xl bg-white focus-within:border-red-400 transition-colors">
+                            {/* Search Tags */}
+                            {searchTerms.map((term) => (
+                                <div
+                                    key={term}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 border border-blue-300 rounded-lg"
+                                >
+                                    <Type size={12} className="text-blue-600" />
+                                    <span className="text-xs font-bold text-zinc-700">{term}</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => removeSearchTerm(term)}
+                                        className="text-blue-600 hover:text-blue-700 transition-colors"
+                                    >
+                                        <X size={12} />
+                                    </button>
+                                </div>
+                            ))}
+                            {/* Search Input */}
+                            <input
+                                ref={searchInputRef}
+                                type="text"
+                                value={searchInput}
+                                onChange={(e) => setSearchInput(e.target.value)}
+                                placeholder={searchTerms.length === 0 ? "Search text" : ""}
+                                className="flex-1 min-w-[120px] text-xs font-semibold text-zinc-700 outline-none bg-transparent"
+                                disabled={isSearching || !file}
+                            />
+                        </div>
+                        <button
+                            type="submit"
+                            disabled={!searchInput.trim() || isSearching || !file}
+                            className="w-full px-4 py-2 bg-red-600 text-white text-xs font-black rounded-xl hover:bg-red-700 disabled:bg-zinc-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                        >
+                            {isSearching ? (
+                                <>
+                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                    <span>Searching...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <Search size={14} />
+                                    <span>Search & Redact</span>
+                                </>
+                            )}
+                        </button>
+                    </form>
+                    <p className="text-xs font-semibold text-zinc-500 mt-2 ml-1">
+                        Enter text to find and automatically redact all occurrences
+                    </p>
+                </div>
+
+                {/* Instructions */}
+                <div>
+                    <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3 ml-1">
+                        Manual Selection
+                    </label>
+                    <div className="space-y-2 text-xs font-semibold text-zinc-700">
+                        <div className="flex items-start gap-2">
+                            <div className="w-1.5 h-1.5 rounded-full bg-red-600 mt-1.5 flex-shrink-0" />
+                            <span>Click and drag on the PDF preview to create redaction boxes</span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                            <div className="w-1.5 h-1.5 rounded-full bg-red-600 mt-1.5 flex-shrink-0" />
+                            <span>Select a page from the grid to add redactions</span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                            <div className="w-1.5 h-1.5 rounded-full bg-red-600 mt-1.5 flex-shrink-0" />
+                            <span>Click the X on a redaction box to remove it</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Redaction Color */}
+                <div>
+                    <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3 ml-1">
+                        Redaction Color
+                    </label>
+                    <div className="flex items-center gap-3">
+                        <input
+                            type="color"
+                            value={redactionColor}
+                            onChange={(e) => setRedactionColor(e.target.value)}
+                            className="w-12 h-12 rounded-xl border-2 border-zinc-200 cursor-pointer"
+                        />
+                        <div className="flex-1">
+                            <p className="text-xs font-bold text-zinc-700">Color used for redaction boxes</p>
+                            <p className="text-xs font-semibold text-zinc-500">Default: Black (recommended)</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Redactions List */}
+                {redactions.length > 0 && (
+                    <div>
+                        <div className="flex items-center justify-between mb-3">
+                            <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest ml-1">
+                                Redactions ({redactions.length})
+                            </label>
+                            <button
+                                onClick={clearAllRedactions}
+                                className="text-xs font-black text-red-600 hover:text-red-700 transition-colors"
+                            >
+                                Clear All
+                            </button>
+                        </div>
+                        <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                            {redactions.map((redaction, idx) => {
+                                const pageNum = redaction.pageIndex + 1;
+                                return (
+                                    <div
+                                        key={redaction.id}
+                                        className="flex items-center justify-between p-2 bg-zinc-50 rounded-lg border border-zinc-200"
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <Square size={12} className="text-red-600" />
+                                            <span className="text-xs font-bold text-zinc-700">
+                                                Page {pageNum} - Redaction {idx + 1}
+                                            </span>
+                                        </div>
+                                        <button
+                                            onClick={() => removeRedaction(redaction.id)}
+                                            className="text-red-600 hover:text-red-700 transition-colors"
+                                        >
+                                            <X size={14} />
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {/* Warning */}
+                <div className="bg-red-50/50 rounded-xl p-3 border border-red-100">
+                    <p className="text-xs font-black text-red-700 mb-1">⚠️ Warning</p>
+                    <p className="text-xs font-semibold text-red-600 leading-relaxed">
+                        Redaction is permanent. Once applied, the underlying content cannot be recovered. Make sure you have a  backup of the original file.
+                    </p>
+                </div>
+            </div>
+
+            <div className="mt-auto">
+                <ProcessingButton
+                    onClick={handleRedact}
+                    isProcessing={isProcessing}
+                    disabled={!file || redactions.length === 0}
+                    icon={Eraser}
+                    text="Apply Redactions"
+                    processingText="Applying redactions..."
+                    bgColor="bg-red-600"
+                    className="shadow-red-200"
+                />
+            </div>
+        </div>
+    );
+
+    return (
+        <ConversionLayout
+            title="Redact PDF"
+            description="Permanently remove sensitive information from PDFs. Draw boxes over content to redact it forever."
+            settingsPanel={!result ? SettingsPanel : (
+                <div className="h-full flex flex-col justify-center">
+                    <DownloadResult
+                        fileName={result?.fileName || ""}
+                        downloadUrl={result?.downloadUrl || ""}
+                        onReset={handleReset}
+                        stats={[
+                            { label: "Redactions", value: redactions.length.toString() },
+                            { label: "Status", value: "Redacted" }
+                        ]}
+                    />
+                </div>
+            )}
+        >
+            {result ? (
+                <div className="w-full h-full max-w-4xl">
+                    <PreviewContent url={result.downloadUrl} fileName={result.fileName} />
+                </div>
+            ) : file && pages.length > 0 ? (
+                <div className="w-full h-full flex flex-col overflow-y-auto custom-scrollbar">
+                    <div className="p-4">
+                        <div className="mb-6 flex justify-between items-center">
+                            <div>
+                                <h2 className="text-sm font-black text-zinc-400 uppercase tracking-widest mb-1 flex items-center gap-2">
+                                    <FileText size={14} className="text-zinc-300" />
+                                    Document Preview - Click & Drag to Redact
+                                </h2>
+                                <p className="text-xs text-zinc-500 font-bold">{file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <label className="text-xs font-black text-blue-600 hover:text-blue-700 cursor-pointer flex items-center gap-2 bg-blue-50 px-4 py-2 rounded-xl transition-all active:scale-95">
+                                    <Plus size={14} />
+                                    <span>Replace</span>
+                                    <input type="file" accept=".pdf" onChange={handleFileChange} className="hidden" />
+                                </label>
+                                {redactions.length > 0 && (
+                                    <button
+                                        onClick={clearAllRedactions}
+                                        className="text-xs font-black text-red-600 hover:text-red-700 flex items-center gap-2 bg-red-50 px-4 py-2 rounded-xl transition-all active:scale-95"
+                                    >
+                                        <Trash2 size={14} />
+                                        <span>Clear All</span>
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Content Warning */}
+                        {contentWarning && (
+                            <motion.div
+                                initial={{ opacity: 0, y: -10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0 }}
+                                className="mb-4 bg-yellow-50 border-2 border-yellow-300 rounded-xl p-3 flex items-center gap-3"
+                            >
+                                <X className="text-yellow-600 flex-shrink-0" size={18} />
+                                <p className="text-xs font-bold text-yellow-800">{contentWarning}</p>
+                            </motion.div>
+                        )}
+
+                        {/* Page Grid */}
+                        <div className="mb-4">
+                            <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2 ml-1">
+                                Select Page to Redact
+                            </label>
+                            <div className="flex gap-2 overflow-x-auto pb-2">
+                                {pages.map((page, idx) => (
+                                    <button
+                                        key={page.id}
+                                        onClick={() => setSelectedPageId(page.id)}
+                                        className={`flex-shrink-0 w-20 h-28 rounded-lg border-2 overflow-hidden transition-all ${selectedPageId === page.id
+                                            ? "border-red-600 shadow-lg shadow-red-100"
+                                            : "border-zinc-200 hover:border-red-300"
+                                            }`}
+                                    >
+                                        <img
+                                            src={page.thumbnailUrl}
+                                            alt={`Page ${idx + 1}`}
+                                            className="w-full h-full object-cover"
+                                        />
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Main Preview with Redaction */}
+                        {selectedPage && (
+                            <div className="bg-white rounded-3xl border-2 border-zinc-200 shadow-lg relative overflow-hidden">
+                                <div
+                                    ref={(el) => {
+                                        if (el) canvasRefs.current[selectedPage.id] = el;
+                                    }}
+                                    onMouseDown={(e) => handleMouseDown(e, selectedPage.id)}
+                                    onMouseMove={(e) => handleMouseMove(e, selectedPage.id)}
+                                    onMouseUp={() => handleMouseUp(selectedPage.id)}
+                                    onMouseLeave={() => {
+                                        if (isDragging) {
+                                            handleMouseUp(selectedPage.id);
+                                        }
+                                    }}
+                                    className="w-full relative cursor-crosshair"
+                                >
+                                    <img
+                                        ref={(el) => {
+                                            if (el) imageRefs.current[selectedPage.id] = el;
+                                        }}
+                                        src={selectedPage.thumbnailUrl}
+                                        alt={`Page ${selectedPage.originalIndex + 1}`}
+                                        className="w-full h-auto"
+                                        draggable={false}
+                                    />
+
+                                    {/* Existing Redactions */}
+                                    {(() => {
+                                        const bounds = getImageBounds(selectedPage.id);
+                                        if (!bounds) return null;
+
+                                        return pageRedactions.map((redaction) => {
+                                            // Convert percentage to actual pixels relative to image
+                                            // Use exact dimensions - no padding needed
+                                            const left = bounds.left + (redaction.x / 100) * bounds.width;
+                                            const top = bounds.top + (redaction.y / 100) * bounds.height;
+                                            const width = (redaction.width / 100) * bounds.width;
+                                            const height = (redaction.height / 100) * bounds.height;
+
+                                            return (
+                                                <div
+                                                    key={redaction.id}
+                                                    className="absolute pointer-events-none group"
+                                                    style={{
+                                                        left: `${Math.max(0, left)}px`,
+                                                        top: `${Math.max(0, top)}px`,
+                                                        width: `${width}px`,
+                                                        height: `${height}px`,
+                                                    }}
+                                                >
+                                                    <div
+                                                        className="absolute inset-0"
+                                                        style={{ backgroundColor: redactionColor }}
+                                                    />
+                                                    <button
+                                                        onClick={() => removeRedaction(redaction.id)}
+                                                        className="absolute -top-2 -right-2 w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-auto shadow-lg"
+                                                    >
+                                                        <X size={12} />
+                                                    </button>
+                                                </div>
+                                            );
+                                        });
+                                    })()}
+
+                                    {/* Current Redaction Being Drawn */}
+                                    {currentRedaction && currentRedaction.width > 0 && currentRedaction.height > 0 && (() => {
+                                        const bounds = getImageBounds(selectedPage.id);
+                                        if (!bounds) return null;
+
+                                        // Convert percentage to actual pixels relative to image
+                                        const left = bounds.left + (currentRedaction.x / 100) * bounds.width;
+                                        const top = bounds.top + (currentRedaction.y / 100) * bounds.height;
+                                        const width = (currentRedaction.width / 100) * bounds.width;
+                                        const height = (currentRedaction.height / 100) * bounds.height;
+
+                                        return (
+                                            <div
+                                                className="absolute pointer-events-none"
+                                                style={{
+                                                    left: `${left}px`,
+                                                    top: `${top}px`,
+                                                    width: `${width}px`,
+                                                    height: `${height}px`,
+                                                }}
+                                            >
+                                                <div
+                                                    className="absolute inset-0 border-2 border-dashed border-red-600"
+                                                    style={{ backgroundColor: `${redactionColor}60` }}
+                                                />
+                                            </div>
+                                        );
+                                    })()}
+
+
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            ) : (
+                <div className="text-center max-w-sm px-6">
+                    <div className="w-24 h-24 bg-red-50 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 shadow-inner group">
+                        <Eraser className="text-red-400 group-hover:scale-110 transition-transform duration-500" size={48} />
+                    </div>
+                    <h3 className="text-2xl font-black text-zinc-900 mb-3 tracking-tight">Redact PDF</h3>
+                    <p className="text-zinc-500 font-medium text-sm mb-8 leading-relaxed">
+                        Permanently remove sensitive information from PDFs. Draw boxes over content to redact it forever.
+                    </p>
+                    <label className="inline-flex items-center gap-3 px-8 py-4 bg-red-600 text-white font-black rounded-2xl hover:bg-red-700 cursor-pointer transition-all shadow-xl shadow-red-200 active:scale-95 group">
+                        <Plus size={22} className="group-hover:rotate-90 transition-transform duration-300" />
+                        <span>Select PDF File</span>
+                        <input type="file" accept=".pdf" onChange={handleFileChange} className="hidden" ref={fileInputRef} />
+                    </label>
+                </div>
+            )}
+        </ConversionLayout>
+    );
+}
+

@@ -16,7 +16,14 @@ import {
     FileSpreadsheet,
     ChevronDown,
     Home,
-    Settings
+    Settings,
+    Crop,
+    Scan,
+    Hash,
+    Wrench,
+    Eraser,
+    Pencil,
+    GitCompare
 } from "lucide-react";
 
 
@@ -32,7 +39,14 @@ export default function Navbar() {
                 { name: "Merge PDF", href: "/merge-pdf", icon: Merge },
                 { name: "Split PDF", href: "/split-pdf", icon: Scissors },
                 { name: "Organize PDF", href: "/organize-pdf", icon: Settings },
+                { name: "Crop PDF", href: "/crop-pdf", icon: Crop },
                 { name: "Compress PDF", href: "/compress-pdf", icon: Minimize2 },
+                { name: "OCR PDF", href: "/ocr-pdf", icon: Scan },
+                { name: "Add Page Numbers", href: "/add-page-numbers", icon: Hash },
+                { name: "Repair PDF", href: "/repair-pdf", icon: Wrench },
+                { name: "Redact PDF", href: "/redact-pdf", icon: Eraser },
+                { name: "Edit PDF", href: "/edit-pdf", icon: Pencil },
+                { name: "Compare PDF", href: "/compare-pdf", icon: GitCompare },
             ]
         },
         {
@@ -49,6 +63,7 @@ export default function Navbar() {
             tools: [
                 { name: "Image to PDF", href: "/image-to-pdf", icon: FileImage },
                 { name: "Office to PDF", href: "/office-to-pdf", icon: FileSpreadsheet },
+                { name: "PPT to PDF", href: "/ppt-to-pdf", icon: Presentation },
                 { name: "HTML to PDF", href: "/html-to-pdf", icon: FileSpreadsheet },
             ]
         }

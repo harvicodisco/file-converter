@@ -5,15 +5,22 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Upload, FileText, CheckCircle2, Loader2, ArrowRight,
   Merge, Scissors, Minimize2, Sheet, Presentation,
-  Image as ImageIcon, FileImage, FileSpreadsheet, Zap, Settings, Globe
+  Image as ImageIcon, FileImage, FileSpreadsheet, Zap, Settings, Globe, Crop, Scan, Hash, Wrench, Eraser,Pencil, GitCompare
 } from "lucide-react";
 import Link from "next/link";
 
 const tools = [
   { name: "Merge PDF", href: "/merge-pdf", icon: Merge, description: "Combine multiple PDFs into one file", color: "text-blue-600", bg: "bg-blue-50" },
+  { name: "Edit PDF", href: "/edit-pdf", icon: Pencil, description: "Add text, shapes, and freehand drawing to PDF", color: "text-indigo-600", bg: "bg-indigo-50" },
   { name: "Split PDF", href: "/split-pdf", icon: Scissors, description: "Extract pages from your PDF", color: "text-indigo-600", bg: "bg-indigo-50" },
   { name: "Organize PDF", href: "/organize-pdf", icon: Settings, description: "Rearrange, delete, or reorder pages", color: "text-purple-600", bg: "bg-purple-50" },
+  { name: "Crop PDF", href: "/crop-pdf", icon: Crop, description: "Remove unwanted margins and areas", color: "text-orange-600", bg: "bg-orange-50" },
   { name: "Compress PDF", href: "/compress-pdf", icon: Minimize2, description: "Reduce file size while maintaining quality", color: "text-green-600", bg: "bg-green-50" },
+  { name: "OCR PDF", href: "/ocr-pdf", icon: Scan, description: "Convert non-selectable PDFs into searchable text", color: "text-blue-600", bg: "bg-blue-50" },
+  { name: "Add Page Numbers", href: "/add-page-numbers", icon: Hash, description: "Add page numbers with customizable positions and styles", color: "text-purple-600", bg: "bg-purple-50" },
+  { name: "Repair PDF", href: "/repair-pdf", icon: Wrench, description: "Fix corrupted or damaged PDF files", color: "text-amber-600", bg: "bg-amber-50" },
+  { name: "Redact PDF", href: "/redact-pdf", icon: Eraser, description: "Permanently remove sensitive information", color: "text-red-600", bg: "bg-red-50" },
+  { name: "Compare PDF", href: "/compare-pdf", icon: GitCompare, description: "Compare two PDFs to find differences", color: "text-indigo-600", bg: "bg-indigo-50" },
   { name: "PDF to Word", href: "/pdf-to-word", icon: FileText, description: "Convert documents to editable Word", color: "text-blue-500", bg: "bg-blue-50/50" },
   { name: "PDF to Excel", href: "/pdf-to-excel", icon: Sheet, description: "Turn PDFs into editable spreadsheets", color: "text-emerald-600", bg: "bg-emerald-50" },
   { name: "PDF to PPT", href: "/pdf-to-ppt", icon: Presentation, description: "Create PowerPoint slides from PDF", color: "text-orange-600", bg: "bg-orange-50" },
@@ -21,6 +28,7 @@ const tools = [
   { name: "Image to PDF", href: "/image-to-pdf", icon: FileImage, description: "Convert images to high-quality PDF", color: "text-violet-600", bg: "bg-violet-50" },
   { name: "HTML to PDF", href: "/html-to-pdf", icon: Globe, description: "Save web pages as PDF files", color: "text-cyan-600", bg: "bg-cyan-50" },
   { name: "Office to PDF", href: "/office-to-pdf", icon: FileSpreadsheet, description: "Convert Office files to PDF", color: "text-rose-600", bg: "bg-rose-50" },
+  { name: "PPT to PDF", href: "/ppt-to-pdf", icon: Presentation, description: "Convert Powerpoint to PDF", color: "text-orange-600", bg: "bg-orange-50" },
   { name: "PDF to PDF/A", href: "/pdf-to-pdfa", icon: CheckCircle2, description: "Standard for long-term archiving", color: "text-slate-600", bg: "bg-slate-50" },
 ];
 
