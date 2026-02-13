@@ -7,17 +7,24 @@ import ProcessingButton from "@/components/ProcessingButton";
 import DownloadResult from "@/components/DownloadResult";
 import PreviewContent from "@/components/PreviewContent";
 
+interface TableRow {
+    cells: string[];
+}
+
 export default function PDFToExcel() {
     const [files, setFiles] = useState<File[]>([]);
     const [isProcessing, setIsProcessing] = useState(false);
     const [result, setResult] = useState<{ fileName: string; downloadUrl: string } | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const [progress, setProgress] = useState<{ page: number; total: number } | null>(null);
 
     const handleFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
             setFiles([file]);
             setResult(null);
+            setError(null);
             setPreviewUrl(URL.createObjectURL(file));
         }
     };
@@ -26,32 +33,439 @@ export default function PDFToExcel() {
         if (files.length === 0) return;
 
         setIsProcessing(true);
-        const formData = new FormData();
-        formData.append("file", files[0]);
+        setError(null);
+        setProgress(null);
 
         try {
+            // Load PDF.js
+            const pdfjsLib = await import('pdfjs-dist');
+            pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+
+            const file = files[0];
+            const arrayBuffer = await file.arrayBuffer();
+            
+            // Load PDF
+            const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+            const pdf = await loadingTask.promise;
+            const numPages = pdf.numPages;
+
+            setProgress({ page: 0, total: numPages });
+
+            const allTables: TableRow[][] = [];
+            const allTextItems: Array<{text: string, x: number, y: number, width: number, height: number}>[] = [];
+
+            // Extract text with positions from each page
+            for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+                setProgress({ page: pageNum, total: numPages });
+
+                const page = await pdf.getPage(pageNum);
+                const viewport = page.getViewport({ scale: 1.0 });
+                
+                // Get text content with positions
+                const textContent = await page.getTextContent();
+                
+                const pageTextItems: Array<{text: string, x: number, y: number, width: number, height: number}> = [];
+                
+                for (const item of textContent.items as any[]) {
+                    if (item.str && item.transform && item.transform.length >= 6) {
+                        const x = item.transform[4];
+                        const y = viewport.height - item.transform[5]; // Flip Y coordinate
+                        const width = item.width || 0;
+                        const height = item.height || 0;
+                        
+                        pageTextItems.push({
+                            text: item.str,
+                            x: x,
+                            y: y,
+                            width: width,
+                            height: height,
+                        });
+                    }
+                }
+                
+                allTextItems.push(pageTextItems);
+            }
+
+            // Extract tables from text items using improved algorithm
+            const tables = extractTablesFromTextItems(allTextItems);
+            
+            // Send table data to server to create Excel
             const response = await fetch("/api/pdf-to-excel", {
                 method: "POST",
-                body: formData,
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    tables: tables,
+                    fileName: file.name,
+                }),
             });
 
             if (response.ok) {
                 const data = await response.json();
                 setResult(data);
             } else {
-                alert("Conversion failed");
+                const errorData = await response.json().catch(() => ({ error: "Conversion failed" }));
+                setError(errorData.error || errorData.details || "Conversion failed. Please try again.");
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error(error);
-            alert("An error occurred");
+            setError(error.message || "An error occurred during conversion. Please try again.");
         } finally {
             setIsProcessing(false);
+            setProgress(null);
         }
     };
 
+    // CORRECTED: Proper table extraction with global columns and correct row ordering
+    function extractTablesFromTextItems(textItemsPerPage: Array<Array<{text: string, x: number, y: number, width: number, height: number}>>): TableRow[][] {
+        const allTables: TableRow[][] = [];
+        
+        for (const pageItems of textItemsPerPage) {
+            if (pageItems.length === 0) continue;
+            
+            // ============================================
+            // STEP 1: Dynamic Row Tolerance
+            // ============================================
+            const heights = pageItems.map(item => Math.abs(item.height)).filter(h => h > 0);
+            const avgHeight = heights.length > 0 
+                ? heights.reduce((sum, h) => sum + h, 0) / heights.length 
+                : 10;
+            const rowTolerance = avgHeight * 0.8;
+            
+            // Calculate average character width for column tolerance
+            const widths = pageItems.map(item => Math.abs(item.width)).filter(w => w > 0);
+            const avgCharWidth = widths.length > 0
+                ? widths.reduce((sum, w) => sum + w, 0) / widths.length
+                : 10;
+            const columnTolerance = avgCharWidth * 2;
+            
+            // Sort all text by Y descending (top to bottom)
+            const sortedByY = [...pageItems].sort((a, b) => b.y - a.y);
+            
+            // Group items into rows
+            const rows: typeof pageItems[] = [];
+            
+            for (const item of sortedByY) {
+                let foundRow = false;
+                for (const row of rows) {
+                    // Compute avgY correctly: average of all items in row
+                    const rowAvgY = row.reduce((sum, r) => sum + r.y, 0) / row.length;
+                    if (Math.abs(item.y - rowAvgY) < rowTolerance) {
+                        row.push(item);
+                        foundRow = true;
+                        break;
+                    }
+                }
+                if (!foundRow) {
+                    rows.push([item]);
+                }
+            }
+            
+            // ============================================
+            // STEP 2: Merge Header Rows (vertically stacked headers)
+            // ============================================
+            const headerMergeTolerance = avgHeight * 1.5;
+            const mergedRows: typeof pageItems[] = [];
+            
+            for (let i = 0; i < rows.length; i++) {
+                const row = rows[i];
+                let merged = false;
+                
+                // Check if this row should be merged with previous
+                if (mergedRows.length > 0) {
+                    const lastRow = mergedRows[mergedRows.length - 1];
+                    const rowAvgY = row.reduce((sum, r) => sum + r.y, 0) / row.length;
+                    const lastRowAvgY = lastRow.reduce((sum, r) => sum + r.y, 0) / lastRow.length;
+                    const yDiff = Math.abs(rowAvgY - lastRowAvgY);
+                    
+                    // Check if rows have similar X positions (same columns)
+                    const rowXPositions = row.map(r => r.x).sort((a, b) => a - b);
+                    const lastRowXPositions = lastRow.map(r => r.x).sort((a, b) => a - b);
+                    const similarColumns = rowXPositions.length === lastRowXPositions.length &&
+                        rowXPositions.every((x, idx) => Math.abs(x - lastRowXPositions[idx]) < columnTolerance);
+                    
+                    // Merge if vertically close and similar column structure
+                    if (yDiff < headerMergeTolerance && similarColumns) {
+                        lastRow.push(...row);
+                        merged = true;
+                    }
+                }
+                
+                if (!merged) {
+                    mergedRows.push([...row]);
+                }
+            }
+            
+            // ============================================
+            // STEP 3: Sort Rows Top to Bottom (FIXED)
+            // ============================================
+            mergedRows.sort((a, b) => {
+                // Compute avgY correctly for each row
+                const aAvgY = a.reduce((sum, i) => sum + i.y, 0) / a.length;
+                const bAvgY = b.reduce((sum, i) => sum + i.y, 0) / b.length;
+                return bAvgY - aAvgY; // DESCENDING = top to bottom
+            });
+            
+            // ============================================
+            // STEP 4: GLOBAL Column Clustering (ALL rows together)
+            // ============================================
+            // Collect ALL X positions from ALL rows
+            const allXPositions: number[] = [];
+            for (const row of mergedRows) {
+                for (const item of row) {
+                    allXPositions.push(item.x);
+                }
+            }
+            
+            if (allXPositions.length === 0) continue;
+            
+            // Cluster X positions globally (improved algorithm)
+            const sortedX = [...new Set(allXPositions)].sort((a, b) => a - b);
+            const clusters: number[][] = [];
+            
+            // Build clusters: if X is close to existing cluster center, add to it; else create new
+            for (const x of sortedX) {
+                let addedToCluster = false;
+                
+                for (const cluster of clusters) {
+                    const clusterCenter = cluster.reduce((sum, val) => sum + val, 0) / cluster.length;
+                    if (Math.abs(x - clusterCenter) < columnTolerance) {
+                        cluster.push(x);
+                        addedToCluster = true;
+                        break;
+                    }
+                }
+                
+                if (!addedToCluster) {
+                    clusters.push([x]);
+                }
+            }
+            
+            // Get global column anchors (medians) - these are FIXED column positions
+            const globalColumnAnchors = clusters
+                .map(cluster => {
+                    const sorted = cluster.sort((a, b) => a - b);
+                    return sorted[Math.floor(sorted.length / 2)]; // Median
+                })
+                .sort((a, b) => a - b); // Sort left to right
+            
+            // Filter out anchors that are too close (merge them)
+            const filteredAnchors: number[] = [];
+            for (const anchor of globalColumnAnchors) {
+                if (filteredAnchors.length === 0) {
+                    filteredAnchors.push(anchor);
+                } else {
+                    const lastAnchor = filteredAnchors[filteredAnchors.length - 1];
+                    if (Math.abs(anchor - lastAnchor) >= columnTolerance / 2) {
+                        filteredAnchors.push(anchor);
+                    }
+                }
+            }
+            
+            if (filteredAnchors.length < 2) continue;
+            
+            // ============================================
+            // STEP 5: Assign Items Directly to Global Column Anchors
+            // ============================================
+            const tableRows: TableRow[] = [];
+            
+            for (const row of mergedRows) {
+                // Initialize cells array (one per global column anchor)
+                const cells: string[] = new Array(filteredAnchors.length).fill('');
+                
+                // Assign each item to nearest global column anchor
+                for (const item of row) {
+                    // Find nearest column anchor
+                    let nearestCol = 0;
+                    let minDistance = Infinity;
+                    
+                    for (let i = 0; i < filteredAnchors.length; i++) {
+                        const distance = Math.abs(item.x - filteredAnchors[i]);
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            nearestCol = i;
+                        }
+                    }
+                    
+                    // Only assign if within reasonable distance
+                    if (minDistance < columnTolerance && nearestCol < cells.length) {
+                        const itemText = item.text.trim();
+                        if (itemText) {
+                            // Merge multi-line content with newline
+                            if (cells[nearestCol]) {
+                                cells[nearestCol] += '\n' + itemText;
+                            } else {
+                                cells[nearestCol] = itemText;
+                            }
+                        }
+                    }
+                }
+                
+                // Only add row if it has at least one non-empty cell
+                if (cells.some(cell => cell.trim().length > 0)) {
+                    tableRows.push({ cells: cells.map(c => c.trim()) });
+                }
+            }
+            
+            // Filter: Only keep rows with at least 2 columns
+            const validRows = tableRows.filter(row => {
+                const nonEmptyCells = row.cells.filter(c => c.trim().length > 0);
+                return nonEmptyCells.length >= 2;
+            });
+            
+            if (validRows.length >= 2) {
+                allTables.push(validRows);
+            }
+        }
+        
+        return allTables;
+    }
+    
+    // Legacy function kept for compatibility
+    function extractTablesFromOCRWords(words: any[]): TableRow[][] {
+        if (words.length === 0) return [];
+
+        // Step 1: Group words into rows (more accurate row detection)
+        const rowTolerance = 8;
+        const rows: any[][] = [];
+        const sortedWords = [...words].sort((a, b) => b.bbox.y0 - a.bbox.y0);
+
+        for (const word of sortedWords) {
+            let foundRow = false;
+            for (const row of rows) {
+                // Use average Y position of row for better matching
+                const rowAvgY = row.reduce((sum, w) => sum + w.bbox.y0, 0) / row.length;
+                if (Math.abs(word.bbox.y0 - rowAvgY) < rowTolerance) {
+                    row.push(word);
+                    foundRow = true;
+                    break;
+                }
+            }
+            if (!foundRow) {
+                rows.push([word]);
+            }
+        }
+
+        // Sort rows by Y position (top to bottom)
+        rows.sort((a, b) => {
+            const aY = a.reduce((sum, w) => sum + w.bbox.y0, 0) / a.length;
+            const bY = b.reduce((sum, w) => sum + w.bbox.y0, 0) / b.length;
+            return bY - aY;
+        });
+
+        // Step 2: Group words into cells within each row based on horizontal gaps
+        const cellGapThreshold = 25;
+        const rowsWithCells: any[][][] = [];
+
+        for (const row of rows) {
+            row.sort((a: any, b: any) => a.bbox.x0 - b.bbox.x0);
+            const cells: any[][] = [];
+            let currentCell: any[] = [];
+            let lastEndX = -Infinity;
+
+            for (const word of row) {
+                const gap = word.bbox.x0 - lastEndX;
+                if (gap > cellGapThreshold && currentCell.length > 0) {
+                    cells.push(currentCell);
+                    currentCell = [word];
+                    lastEndX = word.bbox.x1;
+                } else {
+                    currentCell.push(word);
+                    lastEndX = Math.max(lastEndX, word.bbox.x1);
+                }
+            }
+            if (currentCell.length > 0) {
+                cells.push(currentCell);
+            }
+            rowsWithCells.push(cells);
+        }
+
+        // Step 3: Detect columns by analyzing cell X positions across all rows
+        const columnTolerance = 40;
+        const allCellXPositions: number[] = [];
+        
+        for (const rowCells of rowsWithCells) {
+            for (const cell of rowCells) {
+                const cellX = cell[0].bbox.x0;
+                allCellXPositions.push(cellX);
+            }
+        }
+
+        if (allCellXPositions.length === 0) return [];
+
+        // Cluster X positions to find column boundaries
+        const sortedX = [...new Set(allCellXPositions)].sort((a, b) => a - b);
+        const clusters: number[][] = [];
+        const visited = new Set<number>();
+
+        for (let i = 0; i < sortedX.length; i++) {
+            if (visited.has(i)) continue;
+            const x = sortedX[i];
+            const cluster = [x];
+            visited.add(i);
+
+            for (let j = i + 1; j < sortedX.length; j++) {
+                if (visited.has(j)) continue;
+                if (Math.abs(sortedX[j] - x) < columnTolerance) {
+                    cluster.push(sortedX[j]);
+                    visited.add(j);
+                }
+            }
+            clusters.push(cluster);
+        }
+
+        // Get column centers (medians)
+        const columnCenters = clusters
+            .map(cluster => {
+                const sorted = cluster.sort((a, b) => a - b);
+                return sorted[Math.floor(sorted.length / 2)];
+            })
+            .sort((a, b) => a - b);
+
+        if (columnCenters.length < 2) return [];
+
+        // Step 4: Map cells to columns using ORDER-BASED approach (most reliable)
+        const tableRows: TableRow[] = [];
+        const maxCols = Math.max(...rowsWithCells.map(row => row.length), columnCenters.length);
+
+        for (const rowCells of rowsWithCells) {
+            const cells: string[] = new Array(maxCols).fill('');
+
+            // Map cells to columns by ORDER (left to right)
+            // This is more reliable than position matching alone
+            for (let i = 0; i < rowCells.length && i < maxCols; i++) {
+                const cell = rowCells[i];
+                const cellText = cell
+                    .map((w: any) => w.text.trim())
+                    .filter((t: string) => t)
+                    .join(' ');
+
+                if (cellText) {
+                    // Use order-based assignment: cell at position i goes to column i
+                    if (cells[i]) {
+                        cells[i] += ' ' + cellText;
+                    } else {
+                        cells[i] = cellText;
+                    }
+                }
+            }
+
+            if (cells.some(cell => cell.trim().length > 0)) {
+                tableRows.push({ cells: cells.map(c => c.trim()) });
+            }
+        }
+
+        return tableRows.length >= 2 ? [tableRows] : [];
+    }
+
     const handleReset = () => {
+        if (result?.downloadUrl) {
+            URL.revokeObjectURL(result.downloadUrl);
+        }
         setFiles([]);
         setResult(null);
+        setError(null);
         if (previewUrl) {
             URL.revokeObjectURL(previewUrl);
             setPreviewUrl(null);
@@ -70,20 +484,50 @@ export default function PDFToExcel() {
                 </p>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl border border-zinc-100 shadow-sm mb-8">
+            <div className="bg-white p-5 rounded-2xl border border-zinc-100 shadow-sm mb-6">
                 <h3 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3">Capabilities</h3>
                 <ul className="space-y-3">
-                    <li className="flex items-center gap-3 text-xs font-bold text-zinc-600">
-                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                        <span>Preserve cell formatting</span>
+                    <li className="flex items-start gap-3 text-xs font-bold text-zinc-600">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 flex-shrink-0" />
+                        <span>Extract tables and structured data</span>
                     </li>
-                    <li className="flex items-center gap-3 text-xs font-bold text-zinc-600">
-                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                        <span>Detect multiple tables</span>
+                    <li className="flex items-start gap-3 text-xs font-bold text-zinc-600">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 flex-shrink-0" />
+                        <span>Detect multiple tables per page</span>
                     </li>
-                    <li className="flex items-center gap-3 text-xs font-bold text-zinc-600">
-                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                        <span>OCR support for scans</span>
+                    <li className="flex items-start gap-3 text-xs font-bold text-zinc-600">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 flex-shrink-0" />
+                        <span>Process multi-page PDFs</span>
+                    </li>
+                </ul>
+            </div>
+
+            {error && (
+                <div className="bg-white p-5 rounded-2xl border border-red-100 shadow-sm mb-6">
+                    <div className="flex items-start gap-3">
+                        <div className="w-1.5 h-1.5 rounded-full bg-red-500 mt-1.5 flex-shrink-0" />
+                        <div className="flex-1">
+                            <h3 className="text-[10px] font-black text-red-600 uppercase tracking-widest mb-2">Error</h3>
+                            <p className="text-xs font-bold text-red-700">{error}</p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <div className="bg-white p-5 rounded-2xl border border-zinc-100 shadow-sm mb-8">
+                <h3 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3">How it works?</h3>
+                <ul className="space-y-3">
+                    <li className="flex items-start gap-3 text-xs font-bold text-zinc-600">
+                        <div className="w-1.5 h-1.5 rounded-full bg-slate-400 mt-1.5 flex-shrink-0" />
+                        <span>Upload your PDF file with tables or structured data</span>
+                    </li>
+                    <li className="flex items-start gap-3 text-xs font-bold text-zinc-600">
+                        <div className="w-1.5 h-1.5 rounded-full bg-slate-400 mt-1.5 flex-shrink-0" />
+                        <span>Our system extracts text and detects table structures</span>
+                    </li>
+                    <li className="flex items-start gap-3 text-xs font-bold text-zinc-600">
+                        <div className="w-1.5 h-1.5 rounded-full bg-slate-400 mt-1.5 flex-shrink-0" />
+                        <span>Download your Excel file with organized data</span>
                     </li>
                 </ul>
             </div>
@@ -95,7 +539,7 @@ export default function PDFToExcel() {
                     disabled={files.length === 0}
                     icon={Sheet}
                     text="Convert to Excel"
-                    processingText="Extracting Data..."
+                    processingText={progress ? `Processing page ${progress.page}/${progress.total}...` : "Extracting Data..."}
                     bgColor="bg-emerald-600"
                     className="shadow-emerald-200"
                 />

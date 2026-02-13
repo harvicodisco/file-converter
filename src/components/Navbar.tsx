@@ -23,7 +23,11 @@ import {
     Wrench,
     Eraser,
     Pencil,
-    GitCompare
+    GitCompare,
+    Lock,
+    RotateCw,
+    Droplet,
+    PenTool
 } from "lucide-react";
 
 
@@ -47,6 +51,10 @@ export default function Navbar() {
                 { name: "Redact PDF", href: "/redact-pdf", icon: Eraser },
                 { name: "Edit PDF", href: "/edit-pdf", icon: Pencil },
                 { name: "Compare PDF", href: "/compare-pdf", icon: GitCompare },
+                { name: "Unlock PDF", href: "/unlock-pdf", icon: Lock },
+                { name: "Rotate PDF", href: "/rotate-pdf", icon: RotateCw },
+                { name: "Watermark PDF", href: "/watermark-pdf", icon: Droplet },
+                { name: "Sign PDF", href: "/sign-pdf", icon: PenTool },
             ]
         },
         {
