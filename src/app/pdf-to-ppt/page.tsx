@@ -6,7 +6,6 @@ import ConversionLayout from "@/components/ConversionLayout";
 import ProcessingButton from "@/components/ProcessingButton";
 import DownloadResult from "@/components/DownloadResult";
 import PreviewContent from "@/components/PreviewContent";
-import pptxgen from "pptxgenjs";
 
 export default function PDFToPPT() {
     const [files, setFiles] = useState<File[]>([]);
@@ -42,6 +41,11 @@ export default function PDFToPPT() {
                 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
             }
 
+            // Dynamically import pptxgenjs to avoid SSR issues
+            const pptxgenModule = await import("pptxgenjs");
+            // pptxgenjs v4 exports the class as default
+            const PptxGenJS = (pptxgenModule.default || pptxgenModule) as any;
+
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
             const totalPages = pdf.numPages;
 
@@ -57,7 +61,7 @@ export default function PDFToPPT() {
             const widthInches = firstPageViewport.width / 72;
             const heightInches = firstPageViewport.height / 72;
 
-            const pptx = new pptxgen();
+            const pptx = new PptxGenJS();
             pptx.defineLayout({ name: 'CUSTOM', width: widthInches, height: heightInches });
             pptx.layout = 'CUSTOM';
 

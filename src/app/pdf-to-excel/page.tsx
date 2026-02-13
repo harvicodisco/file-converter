@@ -140,8 +140,9 @@ export default function PDFToExcel() {
                 : 10;
             const columnTolerance = avgCharWidth * 2;
             
-            // Sort all text by Y descending (top to bottom)
-            const sortedByY = [...pageItems].sort((a, b) => b.y - a.y);
+            // Sort all text by Y ascending (top to bottom)
+            // After Y flip: Y=0 is at top, higher Y is lower on page
+            const sortedByY = [...pageItems].sort((a, b) => a.y - b.y);
             
             // Group items into rows
             const rows: typeof pageItems[] = [];
@@ -204,60 +205,86 @@ export default function PDFToExcel() {
                 // Compute avgY correctly for each row
                 const aAvgY = a.reduce((sum, i) => sum + i.y, 0) / a.length;
                 const bAvgY = b.reduce((sum, i) => sum + i.y, 0) / b.length;
-                return bAvgY - aAvgY; // DESCENDING = top to bottom
+                // After Y flip: lower Y = higher on page, so sort ascending
+                return aAvgY - bAvgY; // ASCENDING = top to bottom
             });
             
             // ============================================
-            // STEP 4: GLOBAL Column Clustering (ALL rows together)
+            // STEP 4: GLOBAL Column Detection (PyMuPDF-style)
             // ============================================
-            // Collect ALL X positions from ALL rows
+            // First, sort each row's items by X position (left to right)
+            for (const row of mergedRows) {
+                row.sort((a, b) => a.x - b.x);
+            }
+            
+            // Collect ALL X positions from ALL rows - this is critical for detecting ALL columns
             const allXPositions: number[] = [];
             for (const row of mergedRows) {
                 for (const item of row) {
+                    // Add both start X and end X to catch all column boundaries
                     allXPositions.push(item.x);
+                    allXPositions.push(item.x + item.width);
                 }
             }
             
             if (allXPositions.length === 0) continue;
             
-            // Cluster X positions globally (improved algorithm)
+            // Sort and deduplicate X positions
             const sortedX = [...new Set(allXPositions)].sort((a, b) => a - b);
-            const clusters: number[][] = [];
             
-            // Build clusters: if X is close to existing cluster center, add to it; else create new
-            for (const x of sortedX) {
-                let addedToCluster = false;
+            // Use DBSCAN-like clustering with adaptive tolerance
+            // This matches PyMuPDF's approach of detecting column boundaries
+            const clusters: number[][] = [];
+            const visited = new Set<number>();
+            
+            // Adaptive tolerance: use smaller tolerance to detect more distinct columns
+            const adaptiveTolerance = Math.min(columnTolerance, avgCharWidth * 1.5);
+            
+            for (let i = 0; i < sortedX.length; i++) {
+                if (visited.has(i)) continue;
                 
-                for (const cluster of clusters) {
-                    const clusterCenter = cluster.reduce((sum, val) => sum + val, 0) / cluster.length;
-                    if (Math.abs(x - clusterCenter) < columnTolerance) {
-                        cluster.push(x);
-                        addedToCluster = true;
-                        break;
+                const x = sortedX[i];
+                const cluster = [x];
+                visited.add(i);
+                
+                // Find all nearby X positions
+                for (let j = i + 1; j < sortedX.length; j++) {
+                    if (visited.has(j)) continue;
+                    if (Math.abs(sortedX[j] - x) < adaptiveTolerance) {
+                        cluster.push(sortedX[j]);
+                        visited.add(j);
                     }
                 }
                 
-                if (!addedToCluster) {
-                    clusters.push([x]);
-                }
+                clusters.push(cluster);
             }
             
-            // Get global column anchors (medians) - these are FIXED column positions
-            const globalColumnAnchors = clusters
+            // Get column anchors: use median of each cluster
+            const columnAnchors = clusters
                 .map(cluster => {
                     const sorted = cluster.sort((a, b) => a - b);
                     return sorted[Math.floor(sorted.length / 2)]; // Median
                 })
-                .sort((a, b) => a - b); // Sort left to right
+                .sort((a, b) => a - b);
             
-            // Filter out anchors that are too close (merge them)
+            // Filter: Remove anchors that are too close (within same column)
+            // But be more permissive to catch all distinct columns
             const filteredAnchors: number[] = [];
-            for (const anchor of globalColumnAnchors) {
+            const minGap = avgCharWidth * 1.0; // Very permissive to catch all columns
+            
+            for (const anchor of columnAnchors) {
                 if (filteredAnchors.length === 0) {
                     filteredAnchors.push(anchor);
                 } else {
                     const lastAnchor = filteredAnchors[filteredAnchors.length - 1];
-                    if (Math.abs(anchor - lastAnchor) >= columnTolerance / 2) {
+                    const gap = anchor - lastAnchor;
+                    
+                    // Keep if gap is significant OR if it appears frequently (likely a real column)
+                    const anchorFrequency = clusters.find(c => 
+                        c.some(x => Math.abs(x - anchor) < adaptiveTolerance)
+                    )?.length || 0;
+                    
+                    if (gap >= minGap || anchorFrequency > 2) {
                         filteredAnchors.push(anchor);
                     }
                 }
@@ -266,7 +293,7 @@ export default function PDFToExcel() {
             if (filteredAnchors.length < 2) continue;
             
             // ============================================
-            // STEP 5: Assign Items Directly to Global Column Anchors
+            // STEP 5: Assign Items to Columns (Order-Based Assignment)
             // ============================================
             const tableRows: TableRow[] = [];
             
@@ -274,32 +301,49 @@ export default function PDFToExcel() {
                 // Initialize cells array (one per global column anchor)
                 const cells: string[] = new Array(filteredAnchors.length).fill('');
                 
-                // Assign each item to nearest global column anchor
-                for (const item of row) {
-                    // Find nearest column anchor
-                    let nearestCol = 0;
+                // Items are already sorted by X position (left to right) from STEP 4
+                // Use a more precise assignment method: assign based on order and position
+                const sortedRow = [...row].sort((a, b) => a.x - b.x);
+                
+                // PyMuPDF-style: Assign each item directly to column based on its X position
+                // This is more accurate than grouping first
+                for (const item of sortedRow) {
+                    const itemText = item.text.trim();
+                    if (!itemText) continue;
+                    
+                    // Find which column this item belongs to based on its X position
+                    let assignedCol = -1;
                     let minDistance = Infinity;
                     
+                    // Find the column anchor closest to this item's X position
                     for (let i = 0; i < filteredAnchors.length; i++) {
                         const distance = Math.abs(item.x - filteredAnchors[i]);
                         if (distance < minDistance) {
                             minDistance = distance;
-                            nearestCol = i;
+                            assignedCol = i;
                         }
                     }
                     
-                    // Only assign if within reasonable distance
-                    if (minDistance < columnTolerance && nearestCol < cells.length) {
-                        const itemText = item.text.trim();
-                        if (itemText) {
-                            // Merge multi-line content with newline
-                            if (cells[nearestCol]) {
-                                cells[nearestCol] += '\n' + itemText;
-                            } else {
-                                cells[nearestCol] = itemText;
-                            }
+                    // Assign to column if within reasonable distance
+                    if (assignedCol >= 0 && minDistance < columnTolerance * 2) {
+                        // Ensure cells array is large enough
+                        while (cells.length <= assignedCol) {
+                            cells.push('');
+                        }
+                        
+                        // Append to cell (items in same column get concatenated)
+                        if (cells[assignedCol]) {
+                            cells[assignedCol] += ' ' + itemText;
+                        } else {
+                            cells[assignedCol] = itemText;
                         }
                     }
+                }
+                
+                // Post-process: Ensure all columns are represented (fill gaps)
+                // This handles cases where a row might skip some columns
+                while (cells.length < filteredAnchors.length) {
+                    cells.push('');
                 }
                 
                 // Only add row if it has at least one non-empty cell
@@ -616,3 +660,4 @@ export default function PDFToExcel() {
         </ConversionLayout>
     );
 }
+

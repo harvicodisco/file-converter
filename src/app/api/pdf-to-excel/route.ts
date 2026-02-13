@@ -125,6 +125,7 @@ function detectTablesImproved(text: string): TableRow[][] {
 }
 
 // Convert tables to Excel format
+// Creates separate sheets per page (similar to pdfcraft-main approach)
 function createExcelFromTables(tables: TableRow[][], extractedText: string): ExcelJS.Workbook {
     const workbook = new ExcelJS.Workbook();
     
@@ -143,26 +144,18 @@ function createExcelFromTables(tables: TableRow[][], extractedText: string): Exc
         return workbook;
     }
     
-    // Create worksheet for tables
-    const worksheet = workbook.addWorksheet('PDF Tables');
-    
-    let currentRow = 1;
-    
-    for (let tableIdx = 0; tableIdx < tables.length; tableIdx++) {
-        const table = tables[tableIdx];
+    // Create separate worksheet for each page (table)
+    for (let pageIdx = 0; pageIdx < tables.length; pageIdx++) {
+        const table = tables[pageIdx];
         
         if (table.length === 0) continue;
         
-        // Add separator between tables
-        if (tableIdx > 0) {
-            worksheet.addRow([]);
-            worksheet.addRow([`--- Table ${tableIdx + 1} ---`]);
-            worksheet.addRow([]);
-            currentRow += 3;
-        }
+        // Create sheet name (Excel sheet names are limited to 31 characters)
+        const sheetName = `Page ${pageIdx + 1}`.substring(0, 31);
+        const worksheet = workbook.addWorksheet(sheetName);
         
         // Find max columns in this table
-        const maxCols = Math.max(...table.map(row => row.cells.length));
+        const maxCols = Math.max(...table.map(row => row.cells.length), 1);
         
         // Create Excel rows
         for (const tableRow of table) {
@@ -174,14 +167,41 @@ function createExcelFromTables(tables: TableRow[][], extractedText: string): Exc
             }
             
             worksheet.addRow(excelRow);
-            currentRow++;
+        }
+        
+        // Set column widths (auto-size based on content, with min/max limits)
+        worksheet.columns.forEach((column, index) => {
+            if (!column) return;
+            
+            let maxLength = 10; // Minimum width
+            
+            // Iterate through cells in this column
+            for (let rowNum = 1; rowNum <= worksheet.rowCount; rowNum++) {
+                const cell = worksheet.getCell(rowNum, index + 1);
+                if (cell && cell.value) {
+                    const cellValue = cell.value.toString();
+                    // Account for multi-line cells
+                    const lines = cellValue.split('\n');
+                    const maxLineLength = Math.max(...lines.map(line => line.length));
+                    maxLength = Math.max(maxLength, maxLineLength);
+                }
+            }
+            
+            // Set width with reasonable limits (min 10, max 50)
+            column.width = Math.min(Math.max(maxLength + 2, 10), 50);
+        });
+        
+        // Style header row if it exists (first row)
+        if (table.length > 0) {
+            const headerRow = worksheet.getRow(1);
+            headerRow.font = { bold: true };
+            headerRow.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFE0E0E0' }
+            };
         }
     }
-    
-    // Set column widths
-    worksheet.columns.forEach((column, index) => {
-        column.width = 20;
-    });
     
     return workbook;
 }
@@ -261,21 +281,40 @@ async function parsePDF(buffer: Buffer): Promise<{ text: string; textItems: Text
 }
 
 // Improved table detection with better column/row alignment
+// Based on pdfcraft-main's approach with dynamic tolerance calculation
 function detectTablesFromPositions(textItems: TextItem[][]): TableRow[][] {
     const allTables: TableRow[][] = [];
     
     for (const pageItems of textItems) {
         if (pageItems.length === 0) continue;
         
-        // Step 1: Group items into rows first (more accurate row detection)
-        const rowTolerance = 8; // Smaller tolerance for better row separation
+        // ============================================
+        // STEP 1: Dynamic Row Tolerance Calculation
+        // ============================================
+        const heights = pageItems.map(item => Math.abs(item.height)).filter(h => h > 0);
+        const avgHeight = heights.length > 0 
+            ? heights.reduce((sum, h) => sum + h, 0) / heights.length 
+            : 10;
+        const rowTolerance = avgHeight * 0.8; // Dynamic tolerance based on text height
+        
+        // Calculate average character width for column tolerance
+        const widths = pageItems.map(item => Math.abs(item.width)).filter(w => w > 0);
+        const avgCharWidth = widths.length > 0
+            ? widths.reduce((sum, w) => sum + w, 0) / widths.length
+            : 10;
+        const columnTolerance = avgCharWidth * 2; // Dynamic tolerance based on character width
+        
+        // Sort all text by Y ascending (top to bottom)
+        // After Y flip: Y=0 is at top, higher Y is lower on page
+        const sortedByY = [...pageItems].sort((a, b) => a.y - b.y);
+        
+        // Group items into rows
         const rows: TextItem[][] = [];
-        const sortedByY = [...pageItems].sort((a, b) => b.y - a.y);
         
         for (const item of sortedByY) {
             let foundRow = false;
             for (const row of rows) {
-                // Check if item is on the same row (similar Y position)
+                // Compute avgY correctly: average of all items in row
                 const rowAvgY = row.reduce((sum, r) => sum + r.y, 0) / row.length;
                 if (Math.abs(item.y - rowAvgY) < rowTolerance) {
                     row.push(item);
@@ -288,59 +327,82 @@ function detectTablesFromPositions(textItems: TextItem[][]): TableRow[][] {
             }
         }
         
-        // Sort rows by Y position (top to bottom)
-        rows.sort((a, b) => {
-            const aY = a.reduce((sum, i) => sum + i.y, 0) / a.length;
-            const bY = b.reduce((sum, i) => sum + i.y, 0) / b.length;
-            return bY - aY;
-        });
+        // ============================================
+        // STEP 2: Merge Header Rows (vertically stacked headers)
+        // ============================================
+        const headerMergeTolerance = avgHeight * 1.5;
+        const mergedRows: TextItem[][] = [];
         
-        // Step 2: Detect columns by analyzing cell positions in rows
-        // Use a more sophisticated approach: find consistent column positions across rows
-        const columnTolerance = 50; // Increased tolerance for column detection
-        const cellGapThreshold = 20; // Gap between cells
-        
-        // First, group items into cells within each row
-        const rowsWithCells: TextItem[][][] = [];
-        
-        for (const row of rows) {
-            row.sort((a, b) => a.x - b.x);
-            const cells: TextItem[][] = [];
-            let currentCell: TextItem[] = [];
-            let lastEndX = -Infinity;
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            let merged = false;
             
-            for (const item of row) {
-                const gap = item.x - lastEndX;
-                if (gap > cellGapThreshold && currentCell.length > 0) {
-                    cells.push(currentCell);
-                    currentCell = [item];
-                    lastEndX = item.x + item.width;
-                } else {
-                    currentCell.push(item);
-                    lastEndX = Math.max(lastEndX, item.x + item.width);
+            // Check if this row should be merged with previous
+            if (mergedRows.length > 0) {
+                const lastRow = mergedRows[mergedRows.length - 1];
+                const rowAvgY = row.reduce((sum, r) => sum + r.y, 0) / row.length;
+                const lastRowAvgY = lastRow.reduce((sum, r) => sum + r.y, 0) / lastRow.length;
+                const yDiff = Math.abs(rowAvgY - lastRowAvgY);
+                
+                // Check if rows have similar X positions (same columns)
+                const rowXPositions = row.map(r => r.x).sort((a, b) => a - b);
+                const lastRowXPositions = lastRow.map(r => r.x).sort((a, b) => a - b);
+                const similarColumns = rowXPositions.length === lastRowXPositions.length &&
+                    rowXPositions.every((x, idx) => Math.abs(x - lastRowXPositions[idx]) < columnTolerance);
+                
+                // Merge if vertically close and similar column structure
+                if (yDiff < headerMergeTolerance && similarColumns) {
+                    lastRow.push(...row);
+                    merged = true;
                 }
             }
-            if (currentCell.length > 0) {
-                cells.push(currentCell);
-            }
-            rowsWithCells.push(cells);
-        }
-        
-        // Now detect column positions by analyzing cell X positions across all rows
-        const allCellXPositions: number[] = [];
-        for (const rowCells of rowsWithCells) {
-            for (const cell of rowCells) {
-                const cellX = cell[0].x;
-                allCellXPositions.push(cellX);
+            
+            if (!merged) {
+                mergedRows.push([...row]);
             }
         }
         
-        if (allCellXPositions.length === 0) continue;
+        // ============================================
+        // STEP 3: Sort Rows Top to Bottom
+        // ============================================
+        mergedRows.sort((a, b) => {
+            // Compute avgY correctly for each row
+            const aAvgY = a.reduce((sum, i) => sum + i.y, 0) / a.length;
+            const bAvgY = b.reduce((sum, i) => sum + i.y, 0) / b.length;
+            // After Y flip: lower Y = higher on page, so sort ascending
+            return aAvgY - bAvgY; // ASCENDING = top to bottom
+        });
         
-        // Cluster X positions to find column boundaries
-        const sortedX = [...new Set(allCellXPositions)].sort((a, b) => a - b);
+        // ============================================
+        // STEP 4: GLOBAL Column Detection (PyMuPDF-style)
+        // ============================================
+        // First, sort each row's items by X position (left to right)
+        for (const row of mergedRows) {
+            row.sort((a, b) => a.x - b.x);
+        }
+        
+        // Collect ALL X positions from ALL rows - this is critical for detecting ALL columns
+        const allXPositions: number[] = [];
+        for (const row of mergedRows) {
+            for (const item of row) {
+                // Add both start X and end X to catch all column boundaries
+                allXPositions.push(item.x);
+                allXPositions.push(item.x + item.width);
+            }
+        }
+        
+        if (allXPositions.length === 0) continue;
+        
+        // Sort and deduplicate X positions
+        const sortedX = [...new Set(allXPositions)].sort((a, b) => a - b);
+        
+        // Use DBSCAN-like clustering with adaptive tolerance
+        // This matches PyMuPDF's approach of detecting column boundaries
         const clusters: number[][] = [];
         const visited = new Set<number>();
+        
+        // Adaptive tolerance: use smaller tolerance to detect more distinct columns
+        const adaptiveTolerance = Math.min(columnTolerance, avgCharWidth * 1.5);
         
         for (let i = 0; i < sortedX.length; i++) {
             if (visited.has(i)) continue;
@@ -349,9 +411,10 @@ function detectTablesFromPositions(textItems: TextItem[][]): TableRow[][] {
             const cluster = [x];
             visited.add(i);
             
+            // Find all nearby X positions
             for (let j = i + 1; j < sortedX.length; j++) {
                 if (visited.has(j)) continue;
-                if (Math.abs(sortedX[j] - x) < columnTolerance) {
+                if (Math.abs(sortedX[j] - x) < adaptiveTolerance) {
                     cluster.push(sortedX[j]);
                     visited.add(j);
                 }
@@ -360,85 +423,106 @@ function detectTablesFromPositions(textItems: TextItem[][]): TableRow[][] {
             clusters.push(cluster);
         }
         
-        // Get column centers (medians of clusters)
-        const columnCenters = clusters
+        // Get column anchors: use median of each cluster
+        const columnAnchors = clusters
             .map(cluster => {
                 const sorted = cluster.sort((a, b) => a - b);
-                return sorted[Math.floor(sorted.length / 2)];
+                return sorted[Math.floor(sorted.length / 2)]; // Median
             })
             .sort((a, b) => a - b);
         
-        if (columnCenters.length < 2) continue;
+        // Filter: Remove anchors that are too close (within same column)
+        // But be more permissive to catch all distinct columns
+        const filteredAnchors: number[] = [];
+        const minGap = avgCharWidth * 1.0; // Very permissive to catch all columns
         
-        // Step 3: Map cells to columns for each row
-        const processedRows: TableRow[] = [];
-        const numColumns = columnCenters.length;
-        
-        for (const rowCells of rowsWithCells) {
-            const rowData: string[] = new Array(numColumns).fill('');
-            
-            // Map each cell to its column
-            for (const cell of rowCells) {
-                const cellText = cell
-                    .map(i => i.text.trim())
-                    .filter(t => t)
-                    .join(' ');
+        for (const anchor of columnAnchors) {
+            if (filteredAnchors.length === 0) {
+                filteredAnchors.push(anchor);
+            } else {
+                const lastAnchor = filteredAnchors[filteredAnchors.length - 1];
+                const gap = anchor - lastAnchor;
                 
-                if (!cellText) continue;
+                // Keep if gap is significant OR if it appears frequently (likely a real column)
+                const anchorFrequency = clusters.find(c => 
+                    c.some(x => Math.abs(x - anchor) < adaptiveTolerance)
+                )?.length || 0;
                 
-                const cellX = cell[0].x;
-                
-                // Find closest column center
-                let bestCol = 0;
-                let minDistance = Infinity;
-                
-                for (let i = 0; i < columnCenters.length; i++) {
-                    const distance = Math.abs(cellX - columnCenters[i]);
-                    if (distance < minDistance) {
-                        minDistance = distance;
-                        bestCol = i;
-                    }
+                if (gap >= minGap || anchorFrequency > 2) {
+                    filteredAnchors.push(anchor);
                 }
-                
-                // Assign to column (always assign to closest, even if slightly off)
-                if (bestCol < rowData.length) {
-                    if (rowData[bestCol]) {
-                        // Multi-line content - use newline for better formatting
-                        rowData[bestCol] += '\n' + cellText;
-                    } else {
-                        rowData[bestCol] = cellText;
-                    }
-                }
-            }
-            
-            // Only add row if it has at least one non-empty cell
-            if (rowData.some(cell => cell.trim().length > 0)) {
-                processedRows.push({ cells: rowData.map(c => c.trim()) });
             }
         }
         
-        // Step 4: Ensure consistent column count
-        if (processedRows.length >= 2) {
-            // Find max columns
-            const maxCols = Math.max(...processedRows.map(row => row.cells.length), numColumns);
+        if (filteredAnchors.length < 2) continue;
+        
+        // ============================================
+        // STEP 5: Assign Items to Columns (Order-Based Assignment)
+        // ============================================
+        const tableRows: TableRow[] = [];
+        
+        for (const row of mergedRows) {
+            // Initialize cells array (one per global column anchor)
+            const cells: string[] = new Array(filteredAnchors.length).fill('');
             
-            // Normalize all rows to have same column count
-            const normalizedRows: TableRow[] = processedRows.map(row => {
-                const cells = [...row.cells];
-                while (cells.length < maxCols) {
-                    cells.push('');
+            // Items are already sorted by X position (left to right) from STEP 4
+            const sortedRow = [...row].sort((a, b) => a.x - b.x);
+            
+            // PyMuPDF-style: Assign each item directly to column based on its X position
+            // This is more accurate than grouping first
+            for (const item of sortedRow) {
+                const itemText = item.text.trim();
+                if (!itemText) continue;
+                
+                // Find which column this item belongs to based on its X position
+                let assignedCol = 0;
+                let minDistance = Infinity;
+                
+                // Find the column anchor closest to this item's X position
+                for (let i = 0; i < filteredAnchors.length; i++) {
+                    const distance = Math.abs(item.x - filteredAnchors[i]);
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        assignedCol = i;
+                    }
                 }
-                return { cells: cells.slice(0, maxCols) };
-            });
-            
-            // Filter rows with at least 2 columns
-            const validRows = normalizedRows.filter(row => 
-                row.cells.filter(c => c.trim().length > 0).length >= 2
-            );
-            
-            if (validRows.length >= 2) {
-                allTables.push(validRows);
+                
+                // Assign to column if within reasonable distance
+                if (minDistance < columnTolerance * 2) {
+                    // Ensure cells array is large enough
+                    while (cells.length <= assignedCol) {
+                        cells.push('');
+                    }
+                    
+                    // Append to cell (items in same column get concatenated)
+                    if (cells[assignedCol]) {
+                        cells[assignedCol] += ' ' + itemText;
+                    } else {
+                        cells[assignedCol] = itemText;
+                    }
+                }
             }
+            
+            // Post-process: Ensure all columns are represented (fill gaps)
+            // This handles cases where a row might skip some columns
+            while (cells.length < filteredAnchors.length) {
+                cells.push('');
+            }
+            
+            // Only add row if it has at least one non-empty cell
+            if (cells.some(cell => cell.trim().length > 0)) {
+                tableRows.push({ cells: cells.map(c => c.trim()) });
+            }
+        }
+        
+        // Filter: Only keep rows with at least 2 columns
+        const validRows = tableRows.filter(row => {
+            const nonEmptyCells = row.cells.filter(c => c.trim().length > 0);
+            return nonEmptyCells.length >= 2;
+        });
+        
+        if (validRows.length >= 2) {
+            allTables.push(validRows);
         }
     }
     
@@ -541,3 +625,4 @@ export async function POST(req: NextRequest) {
         }, { status: 500 });
     }
 }
+
