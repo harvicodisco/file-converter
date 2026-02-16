@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { promisify } from 'util';
+import libre from 'libreoffice-convert';
+
+const convertAsync = promisify(libre.convert);
 
 export async function POST(req: NextRequest) {
     try {
@@ -9,18 +13,30 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
         }
 
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const arrayBuffer = await file.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
 
-        const mockContent = new Blob(["Mock PowerPoint content"], { type: "application/vnd.openxmlformats-officedocument.presentationml.presentation" });
-        const base64 = Buffer.from(await mockContent.arrayBuffer()).toString("base64");
-        const downloadUrl = `data:application/vnd.openxmlformats-officedocument.presentationml.presentation;base64,${base64}`;
+        try {
+            console.log(`API: Attempting LibreOffice PDF to PowerPoint Conversion for ${file.name}...`);
+            const pptxBuffer = await convertAsync(buffer, '.pptx', undefined);
+            console.log("API: LibreOffice PDF to PowerPoint Conversion SUCCESS.");
 
-        return NextResponse.json({
-            fileName: file.name.replace(".pdf", ".pptx"),
-            downloadUrl: downloadUrl,
-        });
+            return new Response(pptxBuffer as any, {
+                headers: {
+                    'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                    'Content-Disposition': `attachment; filename="${file.name.replace(".pdf", ".pptx")}"`,
+                },
+            });
+        } catch (libreError: any) {
+            console.error("API: LibreOffice PDF to PowerPoint Error:", libreError);
+            return NextResponse.json({
+                error: "LibreOffice conversion failed.",
+                details: libreError.message || "Ensure LibreOffice is installed."
+            }, { status: 500 });
+        }
+
     } catch (error) {
-        console.error("Conversion error:", error);
+        console.error("Global Conversion error:", error);
         return NextResponse.json({ error: "Failed to convert to PowerPoint" }, { status: 500 });
     }
 }
